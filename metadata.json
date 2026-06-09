@@ -1,0 +1,6 @@
+{
+  "name": "የትሬዲንግ ስነ-ልቦና ምርምር መድረክ",
+  "description": "ተጠቃሚዎች በትሬዲንግ ስነ-ልቦና ላይ የተሰሩ ጥናቶችን በይነተገናኝ ሳጥኖች የሚያዩበት፣ የራሳቸውን መረጃ እያስገቡ ግራፎችን የሚያንቀሳቅሱበት እና አዳዲስ ጥናቶች በሰዎች አስተያየትና በአድሚን ፍቃድ የሚታተሙበት የጋራ ምርምር መድረክ።",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
