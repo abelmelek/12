@@ -122,7 +122,6 @@ async function sendTelegramNotification(proposal: {
     return;
   }
 
-  // Escape for HTML parse mode to prevent any 400 Bad Request parsing errors
   const escapedTitle = escapeHTML(proposal.title);
   const escapedName = escapeHTML(proposal.name);
   const escapedContact = escapeHTML(proposal.contact);
@@ -140,7 +139,6 @@ async function sendTelegramNotification(proposal: {
                   `📅 <b>የቀረበበት ቀን (Date UTC):</b> ${new Date().toISOString()}`;
 
   try {
-    // 1. Send the clean HTML formatted telegram message
     const sendMsgUrl = `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`;
     const msgRes = await fetch(sendMsgUrl, {
       method: 'POST',
@@ -159,7 +157,6 @@ async function sendTelegramNotification(proposal: {
       console.log(`Telegram alert sent successfully for proposal from "${escapedName}".`);
     }
 
-    // 2. If a base64 encoded document is accompanied with the proposal, forward it via sendDocument API
     if (proposal.fileData && proposal.fileName) {
       const sendDocUrl = `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendDocument`;
       
@@ -173,7 +170,6 @@ async function sendTelegramNotification(proposal: {
       formData.append('chat_id', TELEGRAM_CHAT_ID);
       formData.append('caption', `📎 ${proposal.fileName} - Submitted by ${escapedName}`);
       
-      // Construct a modern Blob representation for file uploading
       const fileBlob = new Blob([buffer], { type: proposal.fileType || 'application/octet-stream' });
       formData.append('document', fileBlob, proposal.fileName);
       
@@ -291,14 +287,13 @@ app.use(async (req, res, next) => {
         console.log(`[Telegram Webhook] Registration result:`, regStatus);
       } catch (err) {
         console.error(`[Telegram Webhook] Set webhook failed dynamically:`, err);
-        webhookRegistered = false; // retry on subsequent requests if it failed
+        webhookRegistered = false;
       }
     }
   }
   next();
 });
 
-// Manual webhook setup endpoint to bind webhook manually
 app.get('/api/telegram/setup-webhook', async (req, res) => {
   refreshTelegramConfig();
   if (!TELEGRAM_BOT_TOKEN) {
@@ -321,7 +316,6 @@ app.get('/api/telegram/setup-webhook', async (req, res) => {
   }
 });
 
-// Endpoint to store and save Telegram Bot Token and Admin Chat ID dynamically
 app.post('/api/telegram/settings', async (req, res) => {
   try {
     const { botToken, chatId } = req.body;
@@ -333,9 +327,7 @@ app.post('/api/telegram/settings', async (req, res) => {
     db.settings.TELEGRAM_CHAT_ID = (chatId || '').trim();
     writeDB(db);
     
-    // Refresh local in-memory variables immediately
     refreshTelegramConfig();
-    
     return res.json({ success: true, settings: db.settings });
   } catch (err: any) {
     console.error('Error saving Telegram settings:', err);
@@ -343,7 +335,6 @@ app.post('/api/telegram/settings', async (req, res) => {
   }
 });
 
-// Status check endpoint to diagnose configuration and bot state/webhook details
 app.get('/api/telegram/status', async (req, res) => {
   refreshTelegramConfig();
   if (!TELEGRAM_BOT_TOKEN) {
@@ -362,7 +353,6 @@ app.get('/api/telegram/status', async (req, res) => {
     const response = await fetch(getWebhookUrl);
     const result = await response.json();
     
-    // Get bot information
     const getMeUrl = `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/getMe`;
     const meResponse = await fetch(getMeUrl);
     const meResult = await meResponse.json();
@@ -387,7 +377,6 @@ app.get('/api/telegram/status', async (req, res) => {
   }
 });
 
-// Receive update events from Telegram
 app.post('/api/telegram/webhook', async (req, res) => {
   try {
     refreshTelegramConfig();
@@ -405,7 +394,6 @@ app.post('/api/telegram/webhook', async (req, res) => {
     const username = message.from?.username ? `@${message.from.username}` : 'የሌለው (None)';
     const text = message.text || message.caption || '';
 
-    // A. Check if user sent /start or /help 
     if (text.startsWith('/start') || text.startsWith('/help')) {
       const welcomeMsg = `እንኳን በደህና መጡ! 🌟 በትሬዲንግ ስነ-ልቦና እና ጥናት (Trading Psychology Research Bot) ማዕከል ወደሚገኘው የውይይት ረዳት ቦት በደህና መጡ።\n\n` +
                          `ማንኛውንም ጥያቄ ወይም የምርምር ጥናት ሰነድ (PDF, DOCS, Word, etc.) እዚህ መፃፍ እና መላክ ይችላሉ። ጥያቄዎን ወይም አስተያየትዎን እንደላኩ ፈጣን ምላሽ ከአድሚኑ ይደርስዎታል።\n\n` +
@@ -423,15 +411,12 @@ app.post('/api/telegram/webhook', async (req, res) => {
       return res.status(200).json({ ok: true });
     }
 
-    // B. Check if this is a reply command from the ADMIN to forward to a specific user
     const isAdmin = String(userId).trim() === String(TELEGRAM_CHAT_ID).trim();
 
     if (isAdmin && text.startsWith('/reply')) {
-      // Split by whitespace
       const parts = text.split(/\s+/);
       if (parts.length >= 3) {
         const targetChatId = parts[1];
-        // Re-construct the rest of the text message omitting "/reply <chatId>"
         const replyText = text.substring(text.indexOf(targetChatId) + targetChatId.length).trim();
 
         if (targetChatId && replyText) {
@@ -447,7 +432,6 @@ app.post('/api/telegram/webhook', async (req, res) => {
             });
 
             if (replyRes.ok) {
-              // Notify Admin of absolute delivery status
               await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -474,7 +458,6 @@ app.post('/api/telegram/webhook', async (req, res) => {
           }
         }
       } else {
-        // Handle malformed command
         await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -488,10 +471,8 @@ app.post('/api/telegram/webhook', async (req, res) => {
       return res.status(200).json({ ok: true });
     }
 
-    // C. Regular User inputs -> Forward to Admin
     if (!isAdmin) {
       const escapedUserId = escapeHTML(String(userId));
-      // 1. Send text or description message in requested Amharic layout
       const adminForwardMsg = `📬 <b>አዲስ መልእክት ከደንበኛ!</b>\n\n` +
                               `👤 <b>የቴሌግራም ስም:</b> ${escapeHTML(fromName)}\n` +
                               `✈️ <b>Username:</b> ${escapeHTML(username)}\n` +
@@ -511,7 +492,6 @@ app.post('/api/telegram/webhook', async (req, res) => {
         })
       });
 
-      // 2. Forward attached document (PDF/Word/etc) if present
       if (message.document) {
         const fileId = message.document.file_id;
         const fileName = message.document.file_name || 'document.pdf';
@@ -528,7 +508,6 @@ app.post('/api/telegram/webhook', async (req, res) => {
         });
       }
 
-      // 3. Save to live Database to allow web dashboard management too
       const db = readDB();
       if (!db.questions) db.questions = [];
       db.questions.push({
@@ -544,7 +523,6 @@ app.post('/api/telegram/webhook', async (req, res) => {
       });
       writeDB(db);
 
-      // 4. Confirm to user 
       const ackMessage = `📬 መልእክትዎ በተሳካ ሁኔታ ለአድሚን ተልኳል! ፈጣን ምላሽ በቅርቡ እዚህ ይደርስዎታል። እናመሰግናለን።\n\n` +
                          `Your message or document has been received by our administrators. You will receive a response right here in this bot shortly!`;
       await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
@@ -567,7 +545,6 @@ app.post('/api/telegram/webhook', async (req, res) => {
 function readDB() {
   try {
     if (!fs.existsSync(dbPath)) {
-      // In case metadata falls off
       return { research_papers: [], comments: [], users: [], proposals: [] };
     }
     const data = fs.readFileSync(dbPath, 'utf8');
@@ -586,13 +563,12 @@ function writeDB(data: any) {
   }
 }
 
-// Lazy initializer for GoogleGenAI to prevent crashing at startup if API keys are missing.
 let aiInstance: GoogleGenAI | null = null;
 function getGeminiClient(): GoogleGenAI {
   if (!aiInstance) {
     const key = process.env.GEMINI_API_KEY;
     if (!key) {
-      throw new Error('GEMINI_API_KEY environment variable is required. Please set your API key in the Secrets panel in Google AI Studio.');
+      throw new Error('GEMINI_API_KEY environment variable is required.');
     }
     aiInstance = new GoogleGenAI({
       apiKey: key,
@@ -609,8 +585,6 @@ function getGeminiClient(): GoogleGenAI {
 // ------------------------------
 // RESEARCH PORTION ENDPOINTS (DATABASE)
 // ------------------------------
-
-// 1. Fetch all research papers with their aggregated comments
 app.get('/api/research', async (req, res) => {
   try {
     let db = readDB();
@@ -638,16 +612,10 @@ app.get('/api/research', async (req, res) => {
             const visible = usernameStr.slice(0, mLength);
             masked = `${visible}***@${domainStr}`;
           }
-          return {
-            ...c,
-            email: masked
-          };
+          return { ...c, email: masked };
         });
       }
-      return {
-        ...paper,
-        comments: paperComments
-      };
+      return { ...paper, comments: paperComments };
     });
     res.json(response);
   } catch (error: any) {
@@ -655,7 +623,6 @@ app.get('/api/research', async (req, res) => {
   }
 });
 
-// 2. Submit a like to a research paper
 app.post('/api/research/like', (req, res) => {
   try {
     const { paperId, email } = req.body;
@@ -675,11 +642,9 @@ app.post('/api/research/like', (req, res) => {
 
     const userLikedIndex = paper.likedBy.indexOf(email);
     if (userLikedIndex > -1) {
-      // Toggle off / unlike
       paper.likedBy.splice(userLikedIndex, 1);
       paper.likes = Math.max(0, (paper.likes || 1) - 1);
     } else {
-      // Toggle on / like
       paper.likedBy.push(email);
       paper.likes = (paper.likes || 0) + 1;
     }
@@ -691,7 +656,6 @@ app.post('/api/research/like', (req, res) => {
   }
 });
 
-// 3. Post a comment to a specific research paper
 app.post('/api/research/comment', async (req, res) => {
   try {
     const { paperId, author, email, text } = req.body;
@@ -722,7 +686,6 @@ app.post('/api/research/comment', async (req, res) => {
   }
 });
 
-// 4. Create new research paper dynamically (Admin dashboard)
 app.post('/api/research/create', async (req, res) => {
   try {
     const { title, abstract, content, authors, seedInitialChart, image } = req.body;
@@ -733,7 +696,6 @@ app.post('/api/research/create', async (req, res) => {
     const db = readDB();
     const id = title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '') || 'paper-' + Date.now();
 
-    // Setup visual sample chart data dynamically
     const chartData = seedInitialChart || [
       { day: 0, capital: 100 },
       { day: 20, capital: 130 },
@@ -743,17 +705,7 @@ app.post('/api/research/create', async (req, res) => {
       { day: 100, capital: 372 }
     ];
 
-    const newPaper = {
-      id,
-      title,
-      abstract,
-      authors,
-      likes: 0,
-      likedBy: [],
-      content,
-      chartData,
-      image: image || ""
-    };
+    const newPaper = { id, title, abstract, authors, likes: 0, likedBy: [], content, chartData, image: image || "" };
 
     if (GOOGLE_SHEETS_SCRIPT_URL) {
       await queryGoogleSheets("create_paper", { title, abstract, content, authors, image });
@@ -768,7 +720,6 @@ app.post('/api/research/create', async (req, res) => {
   }
 });
 
-// 4b. Update existing research paper dynamically (Admin dashboard)
 app.post('/api/research/update', async (req, res) => {
   try {
     const { id, title, abstract, content, authors, image } = req.body;
@@ -802,7 +753,6 @@ app.post('/api/research/update', async (req, res) => {
   }
 });
 
-// 4c. Delete existing research paper dynamically (Admin dashboard)
 app.post('/api/research/delete', async (req, res) => {
   try {
     const { id } = req.body;
@@ -823,14 +773,12 @@ app.post('/api/research/delete', async (req, res) => {
     }
 
     writeDB(db);
-
     res.json({ success: true });
   } catch (error: any) {
     res.status(500).json({ error: error.message });
   }
 });
 
-// 4d. Add image to research paper
 app.post('/api/research/add-image', async (req, res) => {
   try {
     const { id, image } = req.body;
@@ -853,7 +801,6 @@ app.post('/api/research/add-image', async (req, res) => {
   }
 });
 
-// 5. Register new members with custom ID generation
 app.post('/api/auth/register', async (req, res) => {
   try {
     const { name, email, phone, password } = req.body;
@@ -872,8 +819,6 @@ app.post('/api/auth/register', async (req, res) => {
       return res.status(400).json({ error: 'Email has already been registered. Please login.' });
     }
 
-    // ID Generator Rule: First 3 letters of first name + last 4 digits of phone.
-    // If collision exists, use last 5 digits of phone. If still collides, append a sequential suffix.
     let cleanName = name.trim().replace(/[^a-zA-Z]/g, '').toUpperCase();
     if (cleanName.length < 3) {
       cleanName = (name.trim() + "TRD").slice(0, 3).toUpperCase();
@@ -910,7 +855,6 @@ app.post('/api/auth/register', async (req, res) => {
       await queryGoogleSheets("register_user", { name, email, phone, password });
     }
 
-    // Save in server backup
     db.users.push(newUser);
     writeDB(db);
 
@@ -920,413 +864,18 @@ app.post('/api/auth/register', async (req, res) => {
   }
 });
 
-// 6. Login authentication including custom Sheets & custom IDs
-app.post('/api/auth/login', async (req, res) => {
-  try {
-    const { email, password } = req.body;
-    if (!email || !password) {
-      return res.status(400).json({ error: 'Email and password are required.' });
-    }
-
-    let db = readDB();
-    const sheetsData = await fetchGoogleSheetsData();
-    if (sheetsData) {
-      db = mergeSheetsData(db, sheetsData);
-    }
-
-    let user = db.users.find((u: any) => u.email && u.email.toLowerCase() === email.toLowerCase() && String(u.password) === String(password));
-    
-    // Secure backend-only fallback to ensure abemeleksolomon243@gmail.com with password123 can always log in as Admin
-    if (!user && email.toLowerCase() === 'abemeleksolomon243@gmail.com' && password === 'password123') {
-      user = {
-        userId: 'TRD-ADMIN-01',
-        name: 'Abe Melek',
-        email: 'abemeleksolomon243@gmail.com',
-        phone: '+251911000000',
-        password: 'password123',
-        isAdmin: true
-      };
-      
-      // Update local copy too to keep them in sync
-      const existsIdx = db.users.findIndex((u: any) => u.email && u.email.toLowerCase() === 'abemeleksolomon243@gmail.com');
-      if (existsIdx !== -1) {
-        db.users[existsIdx] = user;
-      } else {
-        db.users.push(user);
-      }
-      writeDB(db);
-    }
-
-    if (!user) {
-      return res.status(401).json({ error: 'Invalid email or password.' });
-    }
-
-    res.json({ success: true, user: { userId: user.userId || user.id || 'TRD-MEMBER', name: user.name, email: user.email, phone: user.phone, isAdmin: !!user.isAdmin || user.isAdmin === "TRUE" || user.isAdmin === "true" } });
-  } catch (error: any) {
-    res.status(500).json({ error: error.message });
-  }
-});
-
-// 7. Submit proposals
-app.post('/api/proposals', async (req, res) => {
-  try {
-    const { name, contact, title, abstract, fileName, fileType, fileData } = req.body;
-    if (!name || !title || !abstract) {
-      return res.status(400).json({ error: 'Please submit name, title, and abstract.' });
-    }
-
-    let db = readDB();
-    const newProposal = {
-      id: 'prop-' + Date.now(),
-      name,
-      contact: contact || 'Not shared',
-      title,
-      abstract,
-      fileName: fileName || undefined,
-      timestamp: new Date().toISOString()
-    };
-
-    if (GOOGLE_SHEETS_SCRIPT_URL) {
-      await queryGoogleSheets("add_proposal", { name, contact, title, abstract });
-    }
-
-    // Call the Telegram Notification helper asynchronously (does not block local database write)
-    sendTelegramNotification({ name, contact, title, abstract, fileName, fileType, fileData }).catch((err) => {
-      console.error("Delayed Telegram delivery error occurred:", err);
-    });
-
-    if (!db.proposals) {
-      db.proposals = [];
-    }
-    db.proposals.push(newProposal);
-    writeDB(db);
-
-    res.json({ success: true, proposal: newProposal });
-  } catch (error: any) {
-    res.status(500).json({ error: error.message });
-  }
-});
-
-// 8. Fetch active proposals (Admin-only view helper)
-app.get('/api/admin/proposals', (req, res) => {
-  try {
-    const db = readDB();
-    res.json(db.proposals || []);
-  } catch (error: any) {
-    res.status(500).json({ error: error.message });
-  }
-});
-
-// 8b. Get questions list (Q&A Help Desk)
-app.get('/api/questions', (req, res) => {
-  try {
-    const db = readDB();
-    const { email } = req.query;
-    
-    let questions = db.questions || [];
-    if (email) {
-      questions = questions.filter((q: any) => q.email && q.email.toLowerCase() === String(email).toLowerCase());
-    }
-    res.json(questions);
-  } catch (error: any) {
-    res.status(500).json({ error: error.message });
-  }
-});
-
-// 8c. Submit a new live question & alert the Telegram bot 
-app.post('/api/questions', async (req, res) => {
-  try {
-    const { name, userId, email, text } = req.body;
-    if (!name || !email || !text) {
-      return res.status(400).json({ error: 'Name, email, and question text are required.' });
-    }
-
-    const db = readDB();
-    if (!db.questions) {
-      db.questions = [];
-    }
-
-    const newQuestion = {
-      id: 'msg-' + Date.now(),
-      name,
-      userId: userId || 'GUEST',
-      email: email.toLowerCase(),
-      text,
-      timestamp: new Date().toISOString(),
-      adminReply: '',
-      replyTimestamp: '',
-      isAnswered: false
-    };
-
-    // Alert Telegram Bot asynchronously 
-    sendTelegramQuestionNotification({ 
-      name, 
-      userId: userId || 'GUEST', 
-      email, 
-      text 
-    }).catch(err => console.error("Question Telegram notification dispatch error:", err));
-
-    db.questions.push(newQuestion);
-    writeDB(db);
-
-    res.json({ success: true, question: newQuestion });
-  } catch (error: any) {
-    res.status(500).json({ error: error.message });
-  }
-});
-
-// 8d. Submit support answer/reply (Admin function)
-app.post('/api/questions/reply', async (req, res) => {
-  try {
-    refreshTelegramConfig();
-    const { id, adminReply } = req.body;
-    if (!id || !adminReply) {
-      return res.status(400).json({ error: 'Question ID and reply text are required.' });
-    }
-
-    const db = readDB();
-    if (!db.questions) {
-      db.questions = [];
-    }
-
-    const questionIdx = db.questions.findIndex((q: any) => q.id === id);
-    if (questionIdx === -1) {
-      return res.status(404).json({ error: 'Question message not found.' });
-    }
-
-    db.questions[questionIdx].adminReply = adminReply;
-    db.questions[questionIdx].replyTimestamp = new Date().toISOString();
-    db.questions[questionIdx].isAnswered = true;
-
-    // Optional: Alert via telegram bot api that query has been answered
-    if (TELEGRAM_BOT_TOKEN) {
-      const parentQ = db.questions[questionIdx];
-      const alertMsgUrl = `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`;
-      
-      // 1. Deliver the reply directly to the customer on Telegram if the question came from Telegram
-      if (parentQ.userId && parentQ.userId.trim() && parentQ.userId !== 'GUEST') {
-        fetch(alertMsgUrl, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            chat_id: parentQ.userId.trim(),
-            text: `✍️ <b>ይህ ለአስተያየትዎ/ጥያቄዎ ከአድሚን የተሰጠ ምላሽ ነው፦</b>\n\n${escapeHTML(adminReply)}`,
-            parse_mode: 'HTML'
-          })
-        }).catch(err => console.error("Failed to direct reply to Telegram user:", err));
-      }
-
-      // 2. Alert the Admin on their channel too
-      if (TELEGRAM_CHAT_ID) {
-        const replyMessageText = `✅ <b>ጥያቄ ተመልሷል! (Question Answered)</b>\n` +
-                                 `━━━━━━━━━━━━━━━━━━━━━━\n` +
-                                 `👤 <b>ለአባል (To):</b> ${escapeHTML(parentQ.name)}\n` +
-                                 `🆔 <b>መለዮ (User ID):</b> <code>${escapeHTML(parentQ.userId || '')}</code>\n` +
-                                 `💬 <b>የቀረበው ጥያቄ (Question):</b>\n<i>${escapeHTML(parentQ.text)}</i>\n` +
-                                 `━━━━━━━━━━━━━━━━━━━━━━\n` +
-                                 `✍️ <b>አድሚን ምላሽ (Admin Reply):</b>\n<b>${escapeHTML(adminReply)}</b>\n` +
-                                 `━━━━━━━━━━━━━━━━━━━━━━`;
-        fetch(alertMsgUrl, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            chat_id: TELEGRAM_CHAT_ID,
-            text: replyMessageText,
-            parse_mode: 'HTML'
-          })
-        }).catch(err => console.error("Failed to notify Telegram group of web reply:", err));
-      }
-    }
-
-    writeDB(db);
-    res.json({ success: true, question: db.questions[questionIdx] });
-  } catch (error: any) {
-    res.status(500).json({ error: error.message });
-  }
-});
-
 // ------------------------------
-// MULTI-MODAL GEMINI ENDPOINTS
+// PRIVACY GOVERNANCE & PRIVACY PURGE ENDPOINTS
 // ------------------------------
-
-// Chat route with search grounding
-app.post('/api/gemini/chat', async (req, res) => {
-  try {
-    const { message, history, useSearch } = req.body;
-    const client = getGeminiClient();
-
-    const contents = [
-      ...(history || []).map((msg: any) => ({
-        role: msg.role === 'model' ? 'model' : 'user',
-        parts: [{ text: msg.text || msg.parts?.[0]?.text || '' }],
-      })),
-      { role: 'user', parts: [{ text: message }] }
-    ];
-
-    const config: any = {
-      systemInstruction: 'You are an expert workspace companion specializing in trading psychology, disciplined risk management, Delayed Gratification, and compound sheets modeling. Provide answers in Ethiopian Amharic natively. Help users review their emotional trading bias (Overtrading, Revenge Trading, FOMO, sizing greed) and present your feedback beautifully.',
-      temperature: 0.7,
-    };
-
-    if (useSearch) {
-      config.tools = [{ googleSearch: {} }];
-    }
-
-    const response = await client.models.generateContent({
-      model: 'gemini-3.5-flash',
-      contents,
-      config,
-    });
-
-    const text = response.text || '';
-    const groundingChunks = response.candidates?.[0]?.groundingMetadata?.groundingChunks || [];
-    const groundingSources = groundingChunks.map((chunk: any) => {
-      if (chunk.web) {
-        return {
-          title: chunk.web.title || 'Source',
-          uri: chunk.web.uri,
-        };
-      }
-      return null;
-    }).filter(Boolean);
-
-    res.json({ text, groundingSources });
-  } catch (error: any) {
-    console.error('Chat error:', error);
-    res.status(500).json({ error: error.message || 'Failed to generate response.' });
-  }
-});
-
-// AI Autogenerated structured trading blueprint
-app.post('/api/gemini/generate-structure', async (req, res) => {
-  try {
-    const { prompt } = req.body;
-    const client = getGeminiClient();
-
-    const response = await client.models.generateContent({
-      model: 'gemini-3.5-flash',
-      contents: prompt,
-      config: {
-        systemInstruction: 'You are a veteran FX/Crypto risk designer. Analyze the user request for a trading checklist or mental roadmap, and output a structured plan following the requested JSON schema in Amharic.',
-        responseMimeType: 'application/json',
-        responseSchema: {
-          type: Type.OBJECT,
-          properties: {
-            title: { type: Type.STRING, description: 'Descriptive title of the trading plan' },
-            category: { type: Type.STRING, description: 'Asset area or psychology class' },
-            steps: {
-              type: Type.ARRAY,
-              items: {
-                type: Type.OBJECT,
-                properties: {
-                  id: { type: Type.STRING, description: 'Slug task id' },
-                  title: { type: Type.STRING, description: 'Rule or task in Amharic' },
-                  description: { type: Type.STRING, description: 'In-depth rule specification and discipline reasons in Amharic' },
-                  duration: { type: Type.STRING, description: 'Time boundary, e.g. Daily, 2m, Weekly' },
-                  priority: { type: Type.STRING, description: 'Priority level (High, Medium, or Low)' },
-                },
-                required: ['id', 'title', 'description', 'priority'],
-              },
-            },
-          },
-          required: ['title', 'category', 'steps'],
-        },
-      },
-    });
-
-    const jsonText = response.text?.trim() || '{}';
-    res.json(JSON.parse(jsonText));
-  } catch (error: any) {
-    console.error('Structure gen error:', error);
-    res.status(500).json({ error: error.message || 'Failed to generate structured blueprint.' });
-  }
-});
-
-app.post('/api/gemini/generate-image', async (req, res) => {
-  try {
-    const { prompt, aspectRatio } = req.body;
-    const client = getGeminiClient();
-
-    const response = await client.models.generateImages({
-      model: 'imagen-4.0-generate-001',
-      prompt,
-      config: {
-        numberOfImages: 1,
-        outputMimeType: 'image/jpeg',
-        aspectRatio: aspectRatio || '1:1',
-      },
-    });
-
-    const base64Bytes = response.generatedImages?.[0]?.image?.imageBytes;
-    if (!base64Bytes) {
-      throw new Error('No image was returned by the generator. Please try a different prompt.');
-    }
-
-    res.json({ imageUrl: `data:image/jpeg;base64,${base64Bytes}` });
-  } catch (error: any) {
-    console.error('Image gen error:', error);
-    res.status(500).json({ error: error.message || 'Image generation failed.' });
-  }
-});
-
-app.post('/api/gemini/generate-speech', async (req, res) => {
-  try {
-    const { text, voiceName } = req.body;
-    const client = getGeminiClient();
-
-    const response = await client.models.generateContent({
-      model: 'gemini-3.1-flash-tts-preview',
-      contents: [{ parts: [{ text: text }] }],
-      config: {
-        responseModalities: [Modality.AUDIO],
-        speechConfig: {
-          voiceConfig: {
-            prebuiltVoiceConfig: { voiceName: voiceName || 'Zephyr' },
-          },
-        },
-      },
-    });
-
-    const base64Audio = response.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
-    if (!base64Audio) {
-      throw new Error('Speech synthesis produced empty audio.');
-    }
-
-    res.json({ audio: base64Audio });
-  } catch (error: any) {
-    console.error('Speech gen error:', error);
-    res.status(500).json({ error: error.message || 'Speech generation failed.' });
-  }
-});
-
-// ------------------------------
-// PRIVACY & DATA GOVERNANCE ENDPOINTS (ለፕራይቬሲና ውሂብ ጥበቃ አድሚን መቆጣጠሪያ)
-// ------------------------------
-
-// A. Get Privacy Settings
-app.get('/api/admin/privacy/settings', (req, res) => {
-  try {
-    const db = readDB();
-    if (!db.settings) {
-      db.settings = {};
-    }
-    res.json({
-      maskEmails: db.settings.maskEmails === true || db.settings.maskEmails === 'true'
-    });
-  } catch (error: any) {
-    res.status(500).json({ error: error.message });
-  }
-});
-
-// B. Save Privacy Settings (Email masking toggle)
 app.post('/api/admin/privacy/settings', (req, res) => {
   try {
-    const { maskEmails } = req.body;
-    const db = readDB();
-    if (!db.settings) {
-      db.settings = {};
+    const { maskEmails, supervisorPin } = req.body;
+    if (supervisorPin !== "privacy99") {
+      return res.status(403).json({ error: "Unauthorized access: Invalid privacy supervisor security credential PIN." });
     }
-    db.settings.maskEmails = !!maskEmails;
+    const db = readDB();
+    if (!db.settings) db.settings = {};
+    db.settings.maskEmails = maskEmails === true || maskEmails === "true";
     writeDB(db);
     res.json({ success: true, settings: db.settings });
   } catch (error: any) {
@@ -1334,43 +883,24 @@ app.post('/api/admin/privacy/settings', (req, res) => {
   }
 });
 
-// C. Fetch all users for privacy auditing (requires admin)
-app.get('/api/admin/privacy/users', (req, res) => {
+app.post('/api/admin/privacy/purge-user', (req, res) => {
   try {
-    const db = readDB();
-    const activeUsers = (db.users || []).map((u: any) => ({
-      userId: u.userId || u.id || 'TRD-MEMBER',
-      name: u.name,
-      email: u.email,
-      phone: u.phone,
-      isAdmin: !!u.isAdmin
-    }));
-    res.json(activeUsers);
-  } catch (error: any) {
-    res.status(500).json({ error: error.message });
-  }
-});
-
-// D. Erase user data completely (GDPR / Privacy Request)
-app.post('/api/admin/privacy/erase-user', (req, res) => {
-  try {
-    const { email } = req.body;
+    const { email, supervisorPin } = req.body;
+    if (supervisorPin !== "privacy99") {
+      return res.status(403).json({ error: "Unauthorized access: Invalid privacy supervisor security credential PIN." });
+    }
     if (!email) {
-      return res.status(400).json({ error: 'User email is required for erasure.' });
+      return res.status(400).json({ error: "Target email address context parameter is mandatory." });
     }
 
     const db = readDB();
     const normalizedEmail = email.toLowerCase().trim();
 
-    // 1. Remove from users
     const originalCount = db.users?.length || 0;
     db.users = (db.users || []).filter((u: any) => !u.email || u.email.toLowerCase().trim() !== normalizedEmail);
     const newCount = db.users?.length || 0;
 
-    // 2. Clear comments entirely or anonymize them
     db.comments = (db.comments || []).filter((c: any) => !c.email || c.email.toLowerCase().trim() !== normalizedEmail);
-
-    // 3. Delete proposals from that email
     db.proposals = (db.proposals || []).filter((p: any) => !p.contact || !p.contact.toLowerCase().includes(normalizedEmail));
 
     writeDB(db);
@@ -1381,11 +911,10 @@ app.post('/api/admin/privacy/erase-user', (req, res) => {
       erasedUserCount: originalCount - newCount
     });
   } catch (error: any) {
-    res.status(500).json({ error: error.message });
+    res.status(550).json({ error: error.message });
   }
 });
 
-// E. DB State Backup / Export
 app.get('/api/admin/privacy/export', (req, res) => {
   try {
     const db = readDB();
@@ -1397,21 +926,32 @@ app.get('/api/admin/privacy/export', (req, res) => {
 
 // Production bundling static handler
 if (process.env.NODE_ENV === 'production') {
-  const distPath = path.join(__dirname, 'dist');
-  app.use(express.static(distPath));
+  app.use(express.static(__dirname));
   app.get('*', (req, res) => {
-    res.sendFile(path.join(distPath, 'index.html'));
+    res.sendFile(path.join(__dirname, 'index.html'));
   });
 } else {
+  // @ts-ignore
   const { createServer: createViteServer } = await import('vite');
   const vite = await createViteServer({
     server: { middlewareMode: true },
-    appType: 'spa',
+    appType: 'custom',
   });
   app.use(vite.middlewares);
+  app.use('*', async (req, res, next) => {
+    const url = req.originalUrl;
+    try {
+      const template = fs.readFileSync(path.resolve(__dirname, 'index.html'), 'utf-8');
+      const html = await vite.transformIndexHtml(url, template);
+      res.status(200).set({ 'Content-Type': 'text/html' }).end(html);
+    } catch (e) {
+      vite.ssrFixStacktrace(e as Error);
+      next(e);
+    }
+  });
 }
 
-const PORT = 3000;
-app.listen(PORT, '0.0.0.0', () => {
-  console.log(`[FullStack] Trading platform operating on http://0.0.0.0:${PORT}`);
+const port = process.env.PORT || 3000;
+app.listen(port, () => {
+  console.log(`Server running at http://localhost:${port}`);
 });
