@@ -15,7 +15,9 @@ import {
   Menu,
   X,
   ShieldCheck,
-  Trash2
+  Trash2,
+  TrendingUp,
+  SendIcon
 } from 'lucide-react';
 import {
   AreaChart,
@@ -54,7 +56,7 @@ interface Proposal {
 
 export default function App() {
   const [lang, setLang] = useState<'am' | 'en'>('am');
-  const [activeTab, setActiveTab] = useState<string>('home'); // home, submit_proposal, admin
+  const [activeTab, setActiveTab] = useState<string>('home'); 
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState<boolean>(false);
 
   // --- CORE DATABASE STATES ---
@@ -74,27 +76,33 @@ export default function App() {
   const [authError, setAuthError] = useState<string | null>(null);
   const [isProfileModalOpen, setIsProfileModalOpen] = useState<boolean>(false);
 
-  // --- PROPOSAL SUBMISSION STATES ---
+  // --- MONTE CARLO SIMULATOR STATES (For Hero Link) ---
+  const [startCapital, setStartCapital] = useState<number>(100);
+  const [winRate, setWinRate] = useState<number>(50);
+  const [riskReward, setRiskReward] = useState<number>(2.0);
+  const [numTradesSimulated, setNumTradesSimulated] = useState<number>(100);
+  const [simulationData, setSimulationData] = useState<any[]>([]);
+  const [isSimulating, setIsSimulating] = useState<boolean>(false);
+  const [simSummary, setSimSummary] = useState<any>(null);
+
+  // --- PROPOSAL FORM STATES ---
   const [propName, setPropName] = useState<string>('');
   const [propContact, setPropContact] = useState<string>('');
   const [propTitle, setPropTitle] = useState<string>('');
   const [propAbstract, setPropAbstract] = useState<string>('');
   const [proposalSuccess, setProposalSuccess] = useState<string | null>(null);
 
-  // --- PRIVACY & ADMIN SECURITY CONFIG STATES ---
+  // --- PRIVACY & ADMIN CONFIG STATES ---
   const [privacyGateUnlocked, setPrivacyGateUnlocked] = useState<boolean>(false);
   const [privacyPin, setPrivacyPin] = useState<string>('');
   const [privacyError, setPrivacyError] = useState<string | null>(null);
   const [maskEmailsInPublic, setMaskEmailsInPublic] = useState<boolean>(true);
   const [purgeTargetEmail, setPurgeTargetEmail] = useState<string>('');
   const [purgeResult, setPurgeResult] = useState<string | null>(null);
-
-  // --- RESEARCH INTERACTION STATES ---
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [expandedPaper, setExpandedPaper] = useState<string | null>(null);
   const [newCommentText, setNewCommentText] = useState<string>('');
 
-  // DATABASE CONFIG PIPELINE
   useEffect(() => {
     const fetchData = async () => {
       try {
@@ -113,170 +121,116 @@ export default function App() {
           const proposalsData = await proposalsRes.json();
           setProposals(proposalsData || []);
         }
-      } catch (err) {
-        console.error("Data synchronization failed:", err);
-      } finally {
-        setLoading(false);
-      }
+      } catch (err) { console.error(err); } finally { setLoading(false); }
     };
-
     fetchData();
-
     const storedUser = localStorage.getItem('trader_session');
-    if (storedUser) {
-      try {
-        setActiveUser(JSON.parse(storedUser));
-      } catch (e) {
-        localStorage.removeItem('trader_session');
-      }
-    }
+    if (storedUser) setActiveUser(JSON.parse(storedUser));
+    runSimulatorTrajectory();
   }, []);
 
-  // IDENTITY CONTROL & SECURITY PIPELINES
-  const maskEmail = (email: string) => {
-    if (!maskEmailsInPublic) return email;
-    if (!email || !email.includes('@')) return '******';
-    const [name, domain] = email.split('@');
-    if (name.length <= 2) return `**@${domain}`;
-    return `${name.substring(0, 2)}***@${domain}`;
-  };
-
-  const handleUnlockPrivacyGate = (e: FormEvent) => {
-    e.preventDefault();
-    if (privacyPin === 'privacy99') {
-      setPrivacyGateUnlocked(true);
-      setPrivacyError(null);
-    } else {
-      setPrivacyError('Invalid security PIN architecture code.');
-    }
-  };
-
-  const handlePurgeUserData = async (e: FormEvent) => {
-    e.preventDefault();
-    try {
-      const res = await fetch(`/api/admin/privacy/purge?email=${encodeURIComponent(purgeTargetEmail)}`, {
-        method: 'POST'
-      });
-      if (res.ok) {
-        const out = await res.json();
-        setPurgeResult(out.message || 'Purge executed successfully.');
-        setComments(prev => prev.filter(c => c.email !== purgeTargetEmail));
+  const runSimulatorTrajectory = () => {
+    setIsSimulating(true);
+    setTimeout(() => {
+      const arr = [];
+      let discBalance = startCapital;
+      let emoBalance = startCapital;
+      arr.push({ trade: 0, disciplined: discBalance, emotional: emoBalance });
+      for (let i = 1; i <= numTradesSimulated; i++) {
+        const discWin = Math.random() * 100 < winRate;
+        discBalance += discWin ? (startCapital * 0.02 * riskReward) : -(startCapital * 0.02);
+        if (discBalance < 0) discBalance = 0;
+        const emoWin = Math.random() * 100 < winRate;
+        emoBalance += emoWin ? (emoBalance * 0.15 * riskReward) : -(emoBalance * 0.15);
+        if (emoBalance < 0) emoBalance = 0;
+        arr.push({ trade: i, disciplined: Math.round(discBalance * 100) / 100, emotional: Math.round(emoBalance * 100) / 100 });
       }
-    } catch (err) {
-      setPurgeResult('Network pipeline failure during erasure.');
-    }
+      setSimulationData(arr);
+      setSimSummary({
+        disciplinedFinal: Math.round(discBalance),
+        disciplinedStatus: discBalance > startCapital ? 'ትርፋማ' : 'ኪሳራ',
+        emotionalFinal: Math.round(emoBalance),
+        emotionalStatus: emoBalance <= 0 ? 'Margin Call 💥' : emoBalance > startCapital ? 'ትርፋማ' : 'ኪሳራ'
+      });
+      setIsSimulating(false);
+    }, 400);
   };
 
-  // INTERACTION HANDLERS
   const handleLike = async (id: string, e: MouseEvent) => {
     e.stopPropagation();
-    try {
-      const res = await fetch(`/api/papers/${id}/like`, { method: 'POST' });
-      if (res.ok) {
-        setPapers(prev => prev.map(p => p.id === id ? { ...p, likes: p.likes + 1 } : p));
-      }
-    } catch (err) {
-      console.error("Failed to register peer upvote:", err);
-    }
+    const res = await fetch(`/api/papers/${id}/like`, { method: 'POST' });
+    if (res.ok) setPapers(prev => prev.map(p => p.id === id ? { ...p, likes: p.likes + 1 } : p));
   };
 
   const handleAddComment = async (paperId: string, e: FormEvent) => {
     e.preventDefault();
     if (!newCommentText.trim()) return;
-
-    const commentPayload = {
-      paperId,
-      author: activeUser?.name || 'Anonymous Peer',
-      email: activeUser?.email || 'hidden@node.local',
-      text: newCommentText.trim()
-    };
-
-    try {
-      const res = await fetch('/api/comments', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(commentPayload)
-      });
-      if (res.ok) {
-        const savedComment = await res.json();
-        setComments(prev => [savedComment, ...prev]);
-        setNewCommentText('');
-      }
-    } catch (err) {
-      console.error("Comment delivery engine failed:", err);
+    const res = await fetch('/api/comments', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ paperId, author: activeUser?.name || 'Anonymous', email: activeUser?.email || '', text: newCommentText.trim() })
+    });
+    if (res.ok) {
+      const saved = await res.json();
+      setComments(prev => [saved, ...prev]);
+      setNewCommentText('');
     }
   };
 
   const handleSubmitProposal = async (e: FormEvent) => {
     e.preventDefault();
-    const proposalPayload = {
-      name: propName,
-      contact: propContact,
-      title: propTitle,
-      abstract: propAbstract
-    };
-
-    try {
-      const res = await fetch('/api/proposals', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(proposalPayload)
-      });
-      if (res.ok) {
-        const saved = await res.json();
-        setProposals(prev => [saved, ...prev]);
-        setPropName('');
-        setPropContact('');
-        setPropTitle('');
-        setPropAbstract('');
-        setProposalSuccess(lang === 'am' ? 'የጥናት ማመልከቻዎ በተሳካ ሁኔታ ለዳታቤዝ ተልኳል!' : 'Proposal archived successfully inside network database.');
-      }
-    } catch (err) {
-      console.error("Proposal system malfunctioned:", err);
+    const res = await fetch('/api/proposals', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: propName, contact: propContact, title: propTitle, abstract: propAbstract })
+    });
+    if (res.ok) {
+      const saved = await res.json();
+      setProposals(prev => [saved, ...prev]);
+      setPropName(''); setPropContact(''); setPropTitle(''); setPropAbstract('');
+      setProposalSuccess('የጥናት ማመልከቻዎ በተሳካ ሁኔታ ተልኳል!');
     }
   };
 
   const handleAuthSubmit = async (e: FormEvent) => {
     e.preventDefault();
-    setAuthError(null);
     const endpoint = authMode === 'login' ? '/api/auth/login' : '/api/auth/signup';
-    const payload = authMode === 'login'
-      ? { email: authEmail, password: authPassword }
-      : { name: authName, email: authEmail, password: authPassword, telegram: authTelegram };
-
-    try {
-      const res = await fetch(endpoint, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
-      });
-      const data = await res.json();
-      if (res.ok) {
-        setActiveUser(data.user);
-        localStorage.setItem('trader_session', JSON.stringify(data.user));
-        setIsAuthModalOpen(false);
-      } else {
-        setAuthError(data.error || 'Authentication core rejection.');
-      }
-    } catch (err) {
-      setAuthError('Network timeout during verification loop.');
-    }
+    const payload = authMode === 'login' ? { email: authEmail, password: authPassword } : { name: authName, email: authEmail, password: authPassword, telegram: authTelegram };
+    const res = await fetch(endpoint, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+    const data = await res.json();
+    if (res.ok) {
+      setActiveUser(data.user);
+      localStorage.setItem('trader_session', JSON.stringify(data.user));
+      setIsAuthModalOpen(false);
+    } else { setAuthError(data.error || 'Authentication rejection.'); }
   };
 
-  const handleLogout = () => {
-    setActiveUser(null);
-    localStorage.removeItem('trader_session');
+  const handleUnlockPrivacyGate = (e: FormEvent) => {
+    e.preventDefault();
+    if (privacyPin === 'privacy99') { setPrivacyGateUnlocked(true); setPrivacyError(null); }
+    else { setPrivacyError('Invalid security PIN.'); }
+  };
+
+  const handlePurgeUserData = async (e: FormEvent) => {
+    e.preventDefault();
+    const res = await fetch(`/api/admin/privacy/purge?email=${encodeURIComponent(purgeTargetEmail)}`, { method: 'POST' });
+    if (res.ok) {
+      const out = await res.json();
+      setPurgeResult(out.message);
+      setComments(prev => prev.filter(c => c.email !== purgeTargetEmail));
+    }
   };
 
   const handleDeletePaper = async (id: string) => {
-    try {
-      const res = await fetch(`/api/papers/${id}`, { method: 'DELETE' });
-      if (res.ok) {
-        setPapers(prev => prev.filter(p => p.id !== id));
-      }
-    } catch (err) {
-      console.error("Admin delete command failed:", err);
-    }
+    const res = await fetch(`/api/papers/${id}`, { method: 'DELETE' });
+    if (res.ok) setPapers(prev => prev.filter(p => p.id !== id));
+  };
+
+  const maskEmail = (email: string) => {
+    if (!maskEmailsInPublic) return email;
+    if (!email || !email.includes('@')) return '******';
+    const [name, domain] = email.split('@');
+    return `${name.substring(0, 2)}***@${domain}`;
   };
 
   const filteredPapers = papers.filter(p =>
@@ -285,714 +239,287 @@ export default function App() {
   );
 
   return (
-    <div className="min-h-screen bg-[#020813] text-slate-100 flex flex-col antialiased selection:bg-emerald-500/20 selection:text-emerald-300 overflow-x-hidden relative">
-      <div className="absolute top-0 left-1/4 w-96 h-96 bg-emerald-500/5 rounded-full blur-3xl pointer-events-none z-0" />
-      <div className="absolute bottom-10 right-1/4 w-96 h-96 bg-indigo-500/5 rounded-full blur-3xl pointer-events-none z-0" />
-
-      {/* HEADER NAVIGATION */}
-      <header className="border-b border-slate-900 bg-slate-950/80 backdrop-blur-md sticky top-0 z-50 px-4 md:px-8 py-4 transition-all">
+    <div className="min-h-screen bg-[#020813] text-slate-100 flex flex-col antialiased selection:bg-emerald-500/20 relative overflow-x-hidden">
+      
+      {/* HEADER */}
+      <header className="border-b border-slate-900 bg-slate-950/80 backdrop-blur-md sticky top-0 z-50 px-4 md:px-8 py-4">
         <div className="max-w-7xl mx-auto flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <div className="p-2 bg-gradient-to-br from-emerald-500/10 to-teal-500/20 border border-emerald-500/20 rounded-xl shadow-inner">
+            <div className="p-2 bg-gradient-to-br from-emerald-500/10 to-teal-500/20 border border-emerald-500/20 rounded-xl">
               <Brain className="w-5 h-5 text-emerald-400" />
             </div>
             <div>
-              <h1 className="text-sm font-black tracking-tight bg-gradient-to-r from-slate-100 to-slate-300 bg-clip-text text-transparent">
-                {translations[lang].title}
-              </h1>
-              <p className="text-[10px] text-slate-500 font-mono tracking-widest uppercase">
-                {translations[lang].subTitle}
-              </p>
+              <h1 className="text-sm font-black tracking-tight">{translations[lang].title}</h1>
+              <p className="text-[10px] text-slate-500 font-mono tracking-widest uppercase">{translations[lang].subTitle}</p>
             </div>
           </div>
 
-          {/* Desktop Navigation */}
           <div className="hidden md:flex items-center gap-6 text-xs font-mono">
-            <button
-              onClick={() => setActiveTab('home')}
-              className={`cursor-pointer tracking-wide transition relative py-1 ${
-                activeTab === 'home' ? 'text-emerald-400 font-bold' : 'text-slate-400 hover:text-slate-200'
-              }`}
-            >
-              {translations[lang].home}
-              {activeTab === 'home' && <motion.div layoutId="navIndicator" className="absolute bottom-0 left-0 right-0 h-0.5 bg-emerald-400 rounded-full" />}
-            </button>
-            <button
-              onClick={() => setActiveTab('submit_proposal')}
-              className={`cursor-pointer tracking-wide transition relative py-1 ${
-                activeTab === 'submit_proposal' ? 'text-emerald-400 font-bold' : 'text-slate-400 hover:text-slate-200'
-              }`}
-            >
-              {lang === 'am' ? 'የአዳዲስ ተማሪዎች ፖርታል' : 'Submit Proposal'}
-              {activeTab === 'submit_proposal' && <motion.div layoutId="navIndicator" className="absolute bottom-0 left-0 right-0 h-0.5 bg-emerald-400 rounded-full" />}
-            </button>
-            <button
-              onClick={() => setActiveTab('admin')}
-              className={`cursor-pointer tracking-wide transition relative py-1 ${
-                activeTab === 'admin' ? 'text-indigo-400 font-bold' : 'text-slate-400 hover:text-slate-200'
-              }`}
-            >
-              {translations[lang].adminPanel}
-              {activeTab === 'admin' && <motion.div layoutId="navIndicator" className="absolute bottom-0 left-0 right-0 h-0.5 bg-indigo-400 rounded-full" />}
-            </button>
-
-            <button
-              onClick={() => setLang((l) => (l === 'am' ? 'en' : 'am'))}
-              className="flex items-center gap-1.5 px-2.5 py-1 bg-slate-900 border border-slate-800 rounded-lg text-slate-400 hover:text-emerald-400 text-[10px] uppercase font-bold tracking-wider transition cursor-pointer"
-            >
-              <Sliders className="w-3 h-3" />
-              {lang === 'am' ? 'English' : 'አማርኛ'}
-            </button>
-
+            <button onClick={() => setActiveTab('home')} className={`cursor-pointer transition ${activeTab === 'home' ? 'text-emerald-400 font-bold' : 'text-slate-400 hover:text-slate-200'}`}>{translations[lang].home}</button>
+            <button onClick={() => setActiveTab('simulator')} className={`cursor-pointer transition ${activeTab === 'simulator' ? 'text-emerald-400 font-bold' : 'text-slate-400 hover:text-slate-200'}`}>{translations[lang].simulatorTitle}</button>
+            <button onClick={() => setActiveTab('submit_proposal')} className={`cursor-pointer transition ${activeTab === 'submit_proposal' ? 'text-emerald-400 font-bold' : 'text-slate-400 hover:text-slate-200'}`}>{lang === 'am' ? 'የአዳዲስ ተማሪዎች ፖርታል' : 'Submit Proposal'}</button>
+            <button onClick={() => setActiveTab('admin')} className={`cursor-pointer transition ${activeTab === 'admin' ? 'text-indigo-400 font-bold' : 'text-slate-400 hover:text-slate-200'}`}>{translations[lang].adminPanel}</button>
+            <button onClick={() => setLang(l => l === 'am' ? 'en' : 'am')} className="text-slate-400 hover:text-emerald-400 text-[11px] border border-slate-800 rounded-lg px-2 py-0.5">{lang === 'am' ? 'English' : 'አማርኛ'}</button>
             {activeUser ? (
-              <button
-                onClick={() => setIsProfileModalOpen(true)}
-                className="flex items-center gap-2 px-3 py-1.5 border border-emerald-500/20 rounded-xl bg-gradient-to-r from-emerald-500/5 to-teal-500/10 text-emerald-400 text-xs font-bold transition hover:border-emerald-500/40 cursor-pointer shadow-sm"
-              >
-                <div className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-                <span>{activeUser.name}</span>
-              </button>
+              <button onClick={() => setIsProfileModalOpen(true)} className="text-emerald-400 text-xs font-bold px-3 py-1.5 rounded-xl bg-slate-900 border border-emerald-500/10">👤 {activeUser.name}</button>
             ) : (
-              <button
-                onClick={() => {
-                  setAuthMode('login');
-                  setIsAuthModalOpen(true);
-                }}
-                className="px-4 py-1.5 bg-emerald-500 hover:bg-emerald-600 text-slate-950 font-bold rounded-xl shadow-md shadow-emerald-500/10 transition active:scale-98 cursor-pointer"
-              >
-                {translations[lang].loginBtn}
-              </button>
+              <button onClick={() => { setAuthMode('login'); setIsAuthModalOpen(true); }} className="px-4 py-1.5 bg-emerald-500 text-slate-950 font-bold rounded-xl">{translations[lang].loginBtn}</button>
             )}
           </div>
-
-          {/* Mobile Menu Button */}
-          <div className="md:hidden flex items-center gap-3">
-            <button
-              onClick={() => setLang((l) => (l === 'am' ? 'en' : 'am'))}
-              className="px-2 py-1 bg-slate-900 border border-slate-800 rounded-lg text-slate-400 text-[10px] font-mono font-bold"
-            >
-              {lang === 'am' ? 'EN' : 'አማ'}
-            </button>
-            <button
-              onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
-              className="p-1.5 bg-slate-900 border border-slate-800 rounded-xl text-slate-400 hover:text-slate-200"
-            >
-              {isMobileMenuOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
-            </button>
-          </div>
+          <button onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)} className="md:hidden text-slate-400"><Menu className="w-6 h-6" /></button>
         </div>
       </header>
 
-      {/* MOBILE OVERLAY MENU */}
-      <AnimatePresence>
-        {isMobileMenuOpen && (
-          <motion.div
-            initial={{ opacity: 0, y: -10 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -10 }}
-            className="md:hidden border-b border-slate-900 bg-slate-950/95 backdrop-blur-lg fixed top-[69px] left-0 right-0 z-40 p-4 space-y-3 text-sm font-mono shadow-xl"
-          >
-            <button
-              onClick={() => {
-                setActiveTab('home');
-                setIsMobileMenuOpen(false);
-              }}
-              className={`w-full text-left py-2 px-3 rounded-xl transition ${activeTab === 'home' ? 'bg-emerald-500/10 text-emerald-400 font-bold' : 'text-slate-400'}`}
-            >
-              {translations[lang].home}
-            </button>
-            <button
-              onClick={() => {
-                setActiveTab('submit_proposal');
-                setIsMobileMenuOpen(false);
-              }}
-              className={`w-full text-left py-2 px-3 rounded-xl transition ${activeTab === 'submit_proposal' ? 'bg-emerald-500/10 text-emerald-400 font-bold' : 'text-slate-400'}`}
-            >
-              {lang === 'am' ? 'የአዳዲስ ተማሪዎች ፖርታል' : 'Submit Proposal'}
-            </button>
-            <button
-              onClick={() => {
-                setActiveTab('admin');
-                setIsMobileMenuOpen(false);
-              }}
-              className={`w-full text-left py-2 px-3 rounded-xl transition ${activeTab === 'admin' ? 'bg-indigo-500/10 text-indigo-400 font-bold' : 'text-slate-400'}`}
-            >
-              {translations[lang].adminPanel}
-            </button>
+      {/* MAIN HUB */}
+      <main className="flex-1 z-10 relative">
+        
+        {activeTab === 'home' && (
+          <div className="space-y-0">
+            
+            {/* 🚀 IMAGE 2 INSPIRED HERO SECTION */}
+            <section className="relative py-20 px-6 overflow-hidden border-b border-slate-900 bg-slate-950">
+              <div className="absolute top-0 left-1/2 -translate-x-1/2 w-full h-full bg-[radial-gradient(circle_at_center,_var(--tw-gradient-stops))] from-emerald-500/10 via-transparent to-transparent opacity-50 pointer-events-none" />
+              
+              <div className="max-w-4xl mx-auto text-center relative z-10">
+                <motion.h2 
+                  initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}
+                  className="text-4xl md:text-6xl font-black text-white leading-tight tracking-tight mb-6"
+                >
+                  90% of Trading Success <br />
+                  <span className="bg-gradient-to-r from-emerald-400 to-cyan-400 bg-clip-text text-transparent drop-shadow-[0_0_15px_rgba(16,185,129,0.3)]">
+                    lies in your psychology!!
+                  </span>
+                </motion.h2>
+                
+                <motion.p 
+                   initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.2 }}
+                   className="text-slate-400 text-sm md:text-base max-w-2xl mx-auto leading-relaxed mb-10"
+                >
+                  "The pressure to grow small accounts fast, lack of disciplined risk rules, and instant gratification are the standard graveyards of retail traders. True success lies in compounding with low risk."
+                </motion.p>
 
-            <div className="pt-2 border-t border-slate-900">
-              {activeUser ? (
-                <div className="flex items-center justify-between bg-slate-900/60 p-2 rounded-xl border border-slate-800">
-                  <span className="text-xs text-emerald-400 font-bold truncate">👤 {activeUser.name}</span>
-                  <button onClick={handleLogout} className="text-[10px] bg-rose-500/10 text-rose-400 px-2 py-1 rounded-lg">Logout</button>
+                {/* Stat Cards */}
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-12 max-w-3xl mx-auto">
+                  <div className="bg-slate-900/60 border border-slate-800 p-4 rounded-2xl">
+                    <span className="text-emerald-400 text-xl font-black block">2% RISK</span>
+                    <p className="text-[10px] text-slate-500 uppercase tracking-widest font-mono">Strict Discipline (Survival Key)</p>
+                  </div>
+                  <div className="bg-slate-900/60 border border-slate-800 p-4 rounded-2xl">
+                    <span className="text-cyan-400 text-xl font-black block">COMPOUNDING</span>
+                    <p className="text-[10px] text-slate-500 uppercase tracking-widest font-mono">Long-term Capital Acceleration</p>
+                  </div>
+                  <div className="bg-slate-900/60 border border-slate-800 p-4 rounded-2xl">
+                    <span className="text-amber-400 text-xl font-black block">DELAYED GRT.</span>
+                    <p className="text-[10px] text-slate-500 uppercase tracking-widest font-mono">Great Rewards Come From Patience</p>
+                  </div>
+                </div>
+
+                {/* Hero Buttons */}
+                <div className="flex flex-wrap justify-center gap-4">
+                  <button 
+                    onClick={() => setActiveTab('simulator')}
+                    className="px-8 py-3 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black text-xs uppercase tracking-widest rounded-xl shadow-[0_0_20px_rgba(16,185,129,0.2)] transition flex items-center gap-2 cursor-pointer"
+                  >
+                    <TrendingUp className="w-4 h-4" /> Run Delayed Gratification Simulator
+                  </button>
+                  <a 
+                    href="https://t.me/tradingpsychologyresearchbot" target="_blank" rel="noreferrer"
+                    className="px-8 py-3 bg-slate-900 hover:bg-slate-800 border border-slate-800 text-slate-200 font-bold text-xs uppercase tracking-widest rounded-xl transition flex items-center gap-2"
+                  >
+                    <SendIcon className="w-4 h-4 text-cyan-400" /> Chat with Admin on Telegram
+                  </a>
+                </div>
+              </div>
+            </section>
+
+            {/* RESEARCH DISCOVERY SECTION (ውቡ የቦክስ ግሪድ ዲዛይን) */}
+            <section className="max-w-7xl mx-auto px-4 md:px-8 py-16 space-y-8">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-900 pb-6">
+                <div>
+                  <h2 className="text-xl font-black flex items-center gap-2">
+                    <FileText className="w-5 h-5 text-emerald-400" />
+                    <span>Interactive Research Sandbox (Cards Grid)</span>
+                  </h2>
+                  <p className="text-xs text-slate-500 font-sans mt-1">Choose any research card below to read the deep analysis, interact with dynamic capital projection nodes, and leave reviews.</p>
+                </div>
+
+                <div className="w-full sm:w-72 relative">
+                  <input
+                    type="text" placeholder={lang === 'am' ? 'የጥናት ርዕስ ይፈልጉ...' : 'Query scientific nodes...'}
+                    value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)}
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl py-2 pl-3 pr-8 text-xs text-slate-200 focus:outline-none focus:border-emerald-500/50"
+                  />
+                  <Compass className="w-4 h-4 text-slate-600 absolute right-2.5 top-2.5" />
+                </div>
+              </div>
+
+              {loading ? (
+                <div className="py-20 text-center font-mono text-xs text-slate-500 flex items-center justify-center gap-2">
+                  <RefreshCw className="w-5 h-5 animate-spin text-emerald-400" />
+                  <span>Synchronizing scientific data...</span>
                 </div>
               ) : (
-                <button
-                  onClick={() => {
-                    setIsMobileMenuOpen(false);
-                    setAuthMode('login');
-                    setIsAuthModalOpen(true);
-                  }}
-                  className="w-full text-center py-2 bg-emerald-500 text-slate-950 font-bold rounded-xl"
-                >
-                  {translations[lang].loginBtn}
-                </button>
-              )}
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-
-      {/* CORE DISPLAY HUB */}
-      <main className="flex-1 py-8 max-w-7xl mx-auto w-full px-4 z-10">
-        
-        {/* TAB 1: HOME PAGE (ሳይንሳዊ የካርድ ቦክሶች ብቻ የሚታዩበት) */}
-        {activeTab === 'home' && (
-          <div className="space-y-6">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-900 pb-4">
-              <div>
-                <h2 className="text-md font-black tracking-tight flex items-center gap-2">
-                  <FileText className="w-4 h-4 text-emerald-400" />
-                  <span>{translations[lang].researchLibraryTitle}</span>
-                </h2>
-                <p className="text-xs text-slate-500 font-mono uppercase tracking-wider mt-0.5">
-                  Scientific Data Archives
-                </p>
-              </div>
-
-              <div className="w-full sm:w-72 relative">
-                <input
-                  type="text"
-                  placeholder={lang === 'am' ? 'የጥናት ርዕስ ወይም ቁልፍ ቃል ይፈልጉ...' : 'Query scientific nodes...'}
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  className="w-full bg-slate-950/80 border border-slate-800 rounded-xl py-1.5 pl-3 pr-8 text-xs font-sans text-slate-200 placeholder:text-slate-600 focus:outline-none focus:border-emerald-500/50"
-                />
-                <Compass className="w-3.5 h-3.5 text-slate-600 absolute right-2.5 top-2.5" />
-              </div>
-            </div>
-
-            {loading ? (
-              <div className="py-12 text-center font-mono text-xs text-slate-500 flex items-center justify-center gap-2">
-                <RefreshCw className="w-4 h-4 animate-spin text-emerald-400" />
-                <span>Synchronizing data pipelines...</span>
-              </div>
-            ) : filteredPapers.length === 0 ? (
-              <div className="py-12 bg-slate-950/20 border border-dashed border-slate-900 rounded-2xl text-center text-xs font-mono text-slate-500">
-                No matching scientific research papers located inside memory banks.
-              </div>
-            ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                {filteredPapers.map((paper) => {
-                  const isExpanded = expandedPaper === paper.id;
-                  const paperComments = comments.filter(c => c.paperId === paper.id);
-
-                  return (
-                    <motion.div
-                      key={paper.id}
-                      layout="position"
-                      className={`bg-slate-900/40 border transition-all duration-300 rounded-2xl p-5 md:p-6 backdrop-blur-sm flex flex-col justify-between relative overflow-hidden group ${
-                        isExpanded ? 'border-emerald-500/20 shadow-xl shadow-emerald-500/2' : 'border-slate-800/80 hover:border-slate-700/60 shadow-md'
-                      }`}
-                    >
-                      <div className="absolute top-0 right-0 w-24 h-24 bg-gradient-to-bl from-emerald-500/2 to-transparent pointer-events-none" />
-                      <div>
-                        <div className="flex justify-between items-start gap-4 mb-2">
-                          <h3 className="text-sm font-bold text-slate-100 group-hover:text-emerald-400/90 transition font-sans leading-snug">
-                            {paper.title}
-                          </h3>
-                          <button
-                            onClick={(e) => handleLike(paper.id, e)}
-                            className="flex items-center gap-1 px-2.5 py-1 bg-slate-950 hover:bg-slate-900 border border-slate-800 rounded-lg text-[10px] font-mono text-emerald-400 font-bold tracking-tight transition active:scale-95 cursor-pointer shrink-0"
-                          >
-                            <ThumbsUp className="w-3 h-3 fill-emerald-400/5" />
-                            <span>{paper.likes}</span>
-                          </button>
-                        </div>
-
-                        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[10px] font-mono text-slate-500 mb-4">
-                          <span>🧑‍💻 {paper.authors}</span>
-                          <span>•</span>
-                          <span className="text-emerald-500/60 font-bold uppercase tracking-widest text-[9px]">Verified Science</span>
-                        </div>
-
-                        <p className="text-xs text-slate-400 font-sans leading-relaxed text-justify">
-                          {paper.abstract}
-                        </p>
-
-                        {/* RECHARTS AREA GRAPH */}
-                        {paper.chartData && paper.chartData.length > 0 && (
-                          <div className="mt-4 h-36 w-full bg-slate-950/60 border border-slate-900 rounded-xl p-2 font-mono text-[9px]">
-                            <ResponsiveContainer width="100%" height="100%">
-                              <AreaChart data={paper.chartData} margin={{ top: 5, right: 5, left: -25, bottom: 0 }}>
-                                <defs>
-                                  <linearGradient id={`grad-${paper.id}`} x1="0" y1="0" x2="0" y2="1">
-                                    <stop offset="5%" stopColor="#10b981" stopOpacity={0.15}/>
-                                    <stop offset="95%" stopColor="#10b981" stopOpacity={0}/>
-                                  </linearGradient>
-                                </defs>
-                                <CartesianGrid strokeDasharray="3 3" stroke="#0f172a" />
-                                <XAxis dataKey="name" stroke="#475569" tickLine={false} />
-                                <YAxis stroke="#475569" tickLine={false} />
-                                <ChartTooltip contentStyle={{ backgroundColor: '#020813', borderColor: '#1e293b', borderRadius: '8px', fontSize: '10px' }} />
-                                <Area type="monotone" dataKey="value" stroke="#10b981" strokeWidth={1.5} fillOpacity={1} fill={`url(#grad-${paper.id})`} />
-                              </AreaChart>
-                            </ResponsiveContainer>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                  {filteredPapers.map((paper) => {
+                    const isExpanded = expandedPaper === paper.id;
+                    const paperComments = comments.filter(c => c.paperId === paper.id);
+                    return (
+                      <motion.div key={paper.id} layout className={`bg-slate-900/40 border transition-all rounded-2xl p-6 backdrop-blur-sm flex flex-col justify-between ${isExpanded ? 'border-emerald-500/30 ring-1 ring-emerald-500/10 shadow-2xl' : 'border-slate-800/80 hover:border-slate-700'}`}>
+                        <div>
+                          <div className="flex justify-between items-start mb-2">
+                            <span className="text-[9px] font-mono text-emerald-400 bg-emerald-500/5 px-2 py-0.5 rounded border border-emerald-500/10 uppercase font-bold tracking-widest">Psychology Audit</span>
+                            <span className="flex items-center gap-1 text-[10px] text-slate-500 font-mono"><MessageSquare className="w-3 h-3" /> {paperComments.length} Comments</span>
                           </div>
-                        )}
+                          <h3 className="text-base font-bold text-slate-100 mb-3 font-sans leading-tight">{paper.title}</h3>
+                          <p className="text-xs text-slate-400 leading-relaxed text-justify mb-6">{paper.abstract}</p>
 
-                        {/* EXPANDED SECTION */}
-                        <AnimatePresence>
-                          {isExpanded && (
-                            <motion.div
-                              initial={{ opacity: 0, height: 0 }}
-                              animate={{ opacity: 1, height: 'auto' }}
-                              exit={{ opacity: 0, height: 0 }}
-                              className="overflow-hidden mt-6 pt-5 border-t border-slate-800/80 space-y-6"
-                            >
-                              <div className="text-xs text-slate-300 font-sans leading-relaxed space-y-3 bg-slate-950/40 border border-slate-900 p-4 rounded-xl shadow-inner text-justify whitespace-pre-wrap">
-                                {paper.content}
-                              </div>
-
-                              {/* COMMENTS CORE */}
-                              <div className="space-y-3">
-                                <div className="flex items-center gap-1.5 font-mono text-[10px] text-slate-500 uppercase tracking-widest border-b border-slate-950 pb-1.5">
-                                  <MessageSquare className="w-3.5 h-3.5 text-slate-600" />
-                                  <span>Peer Discourse Queue ({paperComments.length})</span>
-                                </div>
-
-                                <div className="max-h-40 overflow-y-auto space-y-2 pr-1 custom-scrollbar">
-                                  {paperComments.length === 0 ? (
-                                    <p className="text-[10px] text-slate-600 font-mono italic text-center py-2">No peer dialogue recorded in this thread.</p>
-                                  ) : (
-                                    paperComments.map((comm) => (
-                                        <div key={comm.id} className="bg-slate-950/60 border border-slate-900/60 p-2.5 rounded-xl space-y-0.5 transition hover:border-slate-800/40">
-                                          <div className="flex justify-between items-center font-mono text-[9px]">
-                                            <span className="text-emerald-400 font-bold">{comm.author}</span>
-                                            <span className="text-slate-600">{maskEmail(comm.email)}</span>
-                                          </div>
-                                          <p className="text-[11px] text-slate-300 font-sans leading-normal pl-0.5">{comm.text}</p>
-                                        </div>
-                                      ))
-                                  )}
-                                </div>
-
-                                {activeUser ? (
-                                  <form onSubmit={(e) => handleAddComment(paper.id, e)} className="flex items-center gap-2 mt-2 pt-1">
-                                    <input
-                                      type="text"
-                                      placeholder="Broadcast analytical feedback..."
-                                      value={newCommentText}
-                                      onChange={(e) => setNewCommentText(e.target.value)}
-                                      className="flex-1 bg-slate-950 border border-slate-900 rounded-xl px-3 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-emerald-500/40 font-sans placeholder:text-slate-700"
-                                    />
-                                    <button
-                                      type="submit"
-                                      className="px-3 py-1.5 bg-slate-900 hover:bg-slate-800 border border-slate-800 text-emerald-400 font-mono text-[11px] font-bold rounded-xl transition cursor-pointer"
-                                    >
-                                      <Send className="w-3 h-3" />
-                                    </button>
-                                  </form>
-                                ) : (
-                                  <div className="bg-amber-500/5 border border-amber-500/10 p-2.5 rounded-xl text-center">
-                                    <p className="text-[10px] text-amber-500 font-sans italic">
-                                      * You must authenticate your terminal profile to participate in community peer discourse.
-                                    </p>
+                          <AnimatePresence>
+                            {isExpanded && (
+                              <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }} className="overflow-hidden border-t border-slate-800 pt-5 space-y-6">
+                                <div className="text-xs text-slate-300 whitespace-pre-wrap leading-relaxed bg-slate-950/50 p-4 rounded-xl border border-slate-900">{paper.content}</div>
+                                <div className="space-y-3">
+                                  <div className="flex items-center justify-between text-[10px] font-mono uppercase text-slate-500 border-b border-slate-950 pb-1"><span>Community Peer Discourse</span> <span>Queue ({paperComments.length})</span></div>
+                                  <div className="max-h-40 overflow-y-auto space-y-2 pr-1">
+                                    {paperComments.map(c => (
+                                      <div key={c.id} className="bg-slate-950/60 p-2.5 rounded-xl border border-slate-900/60 text-xs">
+                                        <div className="flex justify-between font-mono text-[9px] mb-1"><span className="text-emerald-400 font-bold">{c.author}</span> <span className="text-slate-600">{maskEmail(c.email)}</span></div>
+                                        <p className="text-slate-300 font-sans">{c.text}</p>
+                                      </div>
+                                    ))}
                                   </div>
-                                )}
-                              </div>
-                            </motion.div>
-                          )}
-                        </AnimatePresence>
-                      </div>
-
-                      <button
-                        onClick={() => setExpandedPaper(isExpanded ? null : paper.id)}
-                        className="w-full mt-5 py-2 bg-slate-950 hover:bg-slate-900 border border-slate-900 rounded-xl text-[10px] font-mono font-bold tracking-wider text-slate-400 hover:text-slate-300 transition flex items-center justify-center gap-1 cursor-pointer"
-                      >
-                        <span>{isExpanded ? 'Collapse Abstract ↑' : 'Read Full Scientific Paper ↓'}</span>
-                      </button>
-                    </motion.div>
-                  );
-                })}
-              </div>
-            )}
+                                  {activeUser ? (
+                                    <form onSubmit={(e) => handleAddComment(paper.id, e)} className="flex gap-2 pt-2">
+                                      <input type="text" placeholder="Broadcast analytical feedback..." value={newCommentText} onChange={(e) => setNewCommentText(e.target.value)} className="flex-1 bg-slate-950 border border-slate-800 rounded-lg px-3 py-1.5 text-xs text-slate-200 focus:outline-none" />
+                                      <button type="submit" className="px-3 bg-emerald-500 text-slate-950 font-bold text-xs rounded-lg transition"><Send className="w-3.5 h-3.5" /></button>
+                                    </form>
+                                  ) : <p className="text-[10px] text-amber-500 italic text-center py-2 bg-amber-500/5 rounded-lg border border-amber-500/10">* Authenticate to participate in discourse.</p>}
+                                </div>
+                              </motion.div>
+                            )}
+                          </AnimatePresence>
+                        </div>
+                        
+                        <div className="flex items-center justify-between mt-6 pt-4 border-t border-slate-800/60">
+                           <div className="text-[10px] font-mono text-slate-500">Authors: <span className="text-slate-300">{paper.authors}</span></div>
+                           <div className="flex items-center gap-3">
+                              <button onClick={(e) => handleLike(paper.id, e)} className="flex items-center gap-1.5 px-3 py-1 bg-slate-950 border border-slate-800 rounded-lg text-[10px] font-mono text-emerald-400 transition hover:bg-slate-900 cursor-pointer"><ThumbsUp className="w-3 h-3" /> {paper.likes}</button>
+                              <button onClick={() => setExpandedPaper(isExpanded ? null : paper.id)} className="p-1.5 bg-emerald-500/10 text-emerald-400 rounded-lg transition hover:bg-emerald-500 hover:text-slate-950 cursor-pointer">{isExpanded ? <X className="w-4 h-4" /> : <ArrowRight className="w-4 h-4" />}</button>
+                           </div>
+                        </div>
+                      </motion.div>
+                    );
+                  })}
+                </div>
+              )}
+            </section>
           </div>
         )}
 
-        {/* TAB 2: SUBMIT PROPOSAL PORTAL */}
+        {/* TAB 2: SIMULATOR */}
+        {activeTab === 'simulator' && (
+           <div className="max-w-4xl mx-auto py-12 px-6">
+              <div className="bg-slate-900/40 border border-slate-800 rounded-3xl p-8 backdrop-blur-xl">
+                 <h2 className="text-2xl font-black mb-1 flex items-center gap-2"><Sliders className="text-emerald-400 w-6 h-6" /> Monte Carlo Projector</h2>
+                 <p className="text-sm text-slate-400 mb-8 font-mono tracking-tight uppercase">Risk Architecture Simulation v2.0</p>
+                 {/* ... Simulator UI (Already linked to startCapital, winRate, etc) ... */}
+                 <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
+                    <div className="space-y-1"><label className="block text-[10px] font-mono text-slate-500 uppercase">Capital ($)</label><input type="number" value={startCapital} onChange={e=>setStartCapital(Number(e.target.value))} className="w-full bg-slate-950 border border-slate-800 rounded-xl p-3 text-slate-100 font-bold" /></div>
+                    <div className="space-y-1"><label className="block text-[10px] font-mono text-slate-500 uppercase">WinRate (%)</label><input type="number" value={winRate} onChange={e=>setWinRate(Number(e.target.value))} className="w-full bg-slate-950 border border-slate-800 rounded-xl p-3 text-slate-100 font-bold" /></div>
+                    <div className="space-y-1"><label className="block text-[10px] font-mono text-slate-500 uppercase">R:R Ratio</label><input type="number" step="0.1" value={riskReward} onChange={e=>setRiskReward(Number(e.target.value))} className="w-full bg-slate-950 border border-slate-800 rounded-xl p-3 text-slate-100 font-bold" /></div>
+                    <div className="flex items-end"><button onClick={runSimulatorTrajectory} disabled={isSimulating} className="w-full py-3 bg-emerald-500 text-slate-950 font-black rounded-xl uppercase tracking-widest text-xs cursor-pointer active:scale-95 transition">Compute</button></div>
+                 </div>
+                 <div className="h-72 w-full bg-slate-950/50 rounded-2xl border border-slate-800 p-4">
+                    <ResponsiveContainer width="100%" height="100%">
+                       <AreaChart data={simulationData}>
+                          <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
+                          <XAxis dataKey="trade" stroke="#475569" fontSize={10} />
+                          <YAxis stroke="#475569" fontSize={10} />
+                          <ChartTooltip contentStyle={{ backgroundColor: '#020813', border: 'none', borderRadius: '12px' }} />
+                          <Area type="monotone" dataKey="disciplined" stroke="#10b981" fill="#10b981" fillOpacity={0.1} />
+                       </AreaChart>
+                    </ResponsiveContainer>
+                 </div>
+              </div>
+           </div>
+        )}
+
+        {/* TAB 3: SUBMIT PROPOSAL */}
         {activeTab === 'submit_proposal' && (
-          <div className="max-w-2xl mx-auto bg-gradient-to-b from-slate-900/60 to-slate-950/40 border border-slate-800 rounded-2xl p-6 shadow-xl backdrop-blur-md">
-            <div className="border-b border-slate-800 pb-3 mb-6">
-              <h2 className="text-lg font-black tracking-tight flex items-center gap-2">
-                <PlusCircle className="text-emerald-400 w-5 h-5" />
-                <span>{translations[lang].submitProposal}</span>
-              </h2>
-              <p className="text-xs text-slate-400 font-sans mt-1">
-                የእርስዎን የትሬዲንግ ስነ-ልቦና ወይንም የሂሳብ ማባዣ ስልት ጥናት እዚህ ያቅርቡ። አድሚን ገምግሞ ለህዝብ ግልጽ ያደርገዋል።
-              </p>
+          <div className="max-w-2xl mx-auto py-12 px-6">
+            <div className="bg-slate-900/40 border border-slate-800 rounded-3xl p-8 backdrop-blur-xl">
+              <h2 className="text-xl font-black mb-6 flex items-center gap-2"><PlusCircle className="text-emerald-400 w-5 h-5" /> Submit Scientific Proposal</h2>
+              <form onSubmit={handleSubmitProposal} className="space-y-4">
+                <input type="text" placeholder="Full Name *" value={propName} onChange={e=>setPropName(e.target.value)} required className="w-full bg-slate-950 border border-slate-800 rounded-xl p-3 text-xs" />
+                <input type="text" placeholder="Contact Method *" value={propContact} onChange={e=>setPropContact(e.target.value)} required className="w-full bg-slate-950 border border-slate-800 rounded-xl p-3 text-xs" />
+                <input type="text" placeholder="Research Title *" value={propTitle} onChange={e=>setPropTitle(e.target.value)} required className="w-full bg-slate-950 border border-slate-800 rounded-xl p-3 text-xs font-bold" />
+                <textarea placeholder="Outline your abstract..." value={propAbstract} onChange={e=>setPropAbstract(e.target.value)} rows={6} required className="w-full bg-slate-950 border border-slate-800 rounded-xl p-3 text-xs resize-none" />
+                <button type="submit" className="w-full py-3 bg-emerald-500 text-slate-950 font-black rounded-xl uppercase tracking-widest text-xs transition active:scale-98 cursor-pointer">Archive Proposal</button>
+              </form>
+              {proposalSuccess && <p className="mt-4 text-xs font-mono text-emerald-400 text-center">{proposalSuccess}</p>}
             </div>
-
-            <form onSubmit={handleSubmitProposal} className="space-y-4">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-[10px] font-mono uppercase text-slate-500 mb-1">የአመልካች ሙሉ ስም *</label>
-                  <input
-                    type="text"
-                    value={propName}
-                    onChange={(e) => setPropName(e.target.value)}
-                    required
-                    className="w-full bg-slate-950 border border-slate-800 rounded-xl py-2 px-3 text-xs text-slate-200 focus:outline-none focus:border-emerald-500/50 font-sans"
-                  />
-                </div>
-                <div>
-                  <label className="block text-[10px] font-mono uppercase text-slate-500 mb-1">የመገናኛ አድራሻ (ኢሜይል/ስልክ) *</label>
-                  <input
-                    type="text"
-                    value={propContact}
-                    onChange={(e) => setPropContact(e.target.value)}
-                    required
-                    className="w-full bg-slate-950 border border-slate-800 rounded-xl py-2 px-3 text-xs text-slate-200 focus:outline-none focus:border-emerald-500/50 font-sans"
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-[10px] font-mono uppercase text-slate-500 mb-1">የጥናቱ ርዕስ *</label>
-                <input
-                  type="text"
-                  value={propTitle}
-                  onChange={(e) => setPropTitle(e.target.value)}
-                  required
-                  className="w-full bg-slate-950 border border-slate-800 rounded-xl py-2 px-3 text-xs text-slate-200 focus:outline-none focus:border-emerald-500/50 font-sans font-bold"
-                />
-              </div>
-
-              <div>
-                <label className="block text-[10px] font-mono uppercase text-slate-500 mb-1">የጥናቱ አጭር ማጠቃለያ (Abstract Outline) *</label>
-                <textarea
-                  value={propAbstract}
-                  onChange={(e) => setPropAbstract(e.target.value)}
-                  rows={6}
-                  required
-                  className="w-full bg-slate-950 border border-slate-800 rounded-xl py-2 px-3 text-xs text-slate-200 focus:outline-none focus:border-emerald-500/50 font-sans leading-relaxed resize-none"
-                />
-              </div>
-
-              <button
-                type="submit"
-                className="w-full py-2.5 bg-emerald-500 hover:bg-emerald-600 text-slate-950 font-mono font-black text-xs uppercase tracking-wider rounded-xl shadow-lg transition active:scale-98 cursor-pointer"
-              >
-                {translations[lang].paperPublishBtn || 'Submit Framework'}
-              </button>
-            </form>
-
-            {proposalSuccess && (
-              <motion.div
-                initial={{ opacity: 0, y: 4 }}
-                animate={{ opacity: 1, y: 0 }}
-                className="mt-4 text-xs font-mono text-emerald-400 bg-emerald-500/5 p-3 rounded-xl border border-emerald-500/10 text-center"
-              >
-                {proposalSuccess}
-              </motion.div>
-            )}
           </div>
         )}
 
-        {/* TAB 3: ADMIN CONTROL HUB */}
+        {/* TAB 4: ADMIN */}
         {activeTab === 'admin' && (
-          <div className="max-w-4xl mx-auto space-y-8">
-            <div className="border-b border-slate-900 pb-4">
-              <h2 className="text-md font-black tracking-tight flex items-center gap-2">
-                <ShieldCheck className="w-4 h-4 text-indigo-400" />
-                <span>{translations[lang].adminPanel}</span>
-              </h2>
-              <p className="text-xs text-slate-500 font-mono uppercase tracking-wider mt-0.5">
-                Centralized System Gate
-              </p>
-            </div>
-
-            <div className="bg-slate-900/40 border border-slate-800 rounded-2xl p-5 backdrop-blur-sm shadow-xl">
-              <h3 className="text-xs font-mono uppercase font-black text-slate-400 flex items-center gap-2 mb-4 border-b border-slate-950 pb-2">
-                <Lock className="w-3.5 h-3.5 text-indigo-400" /> Secure Terminal Authentication Gate
-              </h3>
-
+          <div className="max-w-4xl mx-auto py-12 px-6 space-y-8">
+            <div className="bg-slate-900/40 border border-slate-800 rounded-3xl p-8 backdrop-blur-xl">
+              <h2 className="text-lg font-black mb-6 flex items-center gap-2"><ShieldCheck className="text-indigo-400 w-5 h-5" /> Admin Secure Terminal</h2>
               {!privacyGateUnlocked ? (
-                <form onSubmit={handleUnlockPrivacyGate} className="max-w-xs mx-auto text-center py-6 space-y-3">
-                  <Lock className="w-6 h-6 text-slate-700 mx-auto animate-pulse" />
-                  <p className="text-xs text-slate-400 font-sans">ይህንን ክፍል ለመክፈት እባክዎ የአድሚን ፒን ኮድ (PIN) ያስገቡ።</p>
-                  <input
-                    type="password"
-                    placeholder="Enter Security PIN (privacy99)"
-                    value={privacyPin}
-                    onChange={(e) => setPrivacyPin(e.target.value)}
-                    className="w-full bg-slate-950 border border-slate-800 rounded-xl py-2 px-3 text-center text-xs font-mono tracking-widest text-slate-200 focus:outline-none focus:border-indigo-500/50"
-                  />
-                  {privacyError && <p className="text-[11px] font-mono text-rose-400 font-bold">{privacyError}</p>}
-                  <button type="submit" className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-slate-100 font-bold font-mono text-xs uppercase rounded-xl shadow-lg transition active:scale-95 cursor-pointer">
-                    Verify Admin PIN
-                  </button>
+                <form onSubmit={handleUnlockPrivacyGate} className="max-w-xs mx-auto text-center space-y-4">
+                  <Lock className="w-8 h-8 text-slate-700 mx-auto" />
+                  <input type="password" placeholder="PIN CODE" value={privacyPin} onChange={e=>setPrivacyPin(e.target.value)} className="w-full bg-slate-950 border border-slate-800 rounded-xl p-3 text-center tracking-widest" />
+                  {privacyError && <p className="text-xs text-rose-400 font-bold">{privacyError}</p>}
+                  <button type="submit" className="w-full py-3 bg-indigo-600 text-white font-bold rounded-xl transition cursor-pointer">Access Console</button>
                 </form>
               ) : (
                 <div className="space-y-6">
-                  <div className="bg-emerald-500/5 border border-emerald-500/20 p-3 rounded-xl text-emerald-400 text-xs font-mono flex items-center gap-2">
-                    <div className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping" />
-                    <span>CyberSecurity Validation Clear. Terminal session opened.</span>
+                  <div className="bg-slate-950 p-4 rounded-xl border border-slate-900 flex justify-between items-center">
+                    <span className="text-xs font-mono text-slate-300">Active Papers Count: <strong>{papers.length}</strong></span>
+                    <button onClick={()=>setPrivacyGateUnlocked(false)} className="text-[10px] text-rose-400 hover:underline">Lock Session</button>
                   </div>
-
-                  {/* IDENTITIES MASK OVERRIDE */}
-                  <div className="bg-slate-950 p-4 rounded-xl border border-slate-900 flex items-center justify-between gap-4">
-                    <div className="space-y-0.5">
-                      <span className="text-xs font-mono font-bold text-slate-300 block">Mask Trader Email Identities</span>
-                      <p className="text-[11px] text-slate-500 font-sans leading-normal">ሲሰናከል የተጠቃሚዎች ሙሉ ኢሜይል በህዝብ ፊት ግልጽ ሆኖ ይታያል።</p>
-                    </div>
-                    <input
-                      type="checkbox"
-                      checked={maskEmailsInPublic}
-                      onChange={(e) => setMaskEmailsInPublic(e.checked)}
-                      className="w-4 h-4 rounded bg-slate-900 border-slate-800 text-indigo-500 focus:ring-0 focus:ring-offset-0 cursor-pointer"
-                    />
+                  <div className="space-y-2">
+                    {papers.map(p=>(
+                      <div key={p.id} className="flex justify-between items-center p-3 bg-slate-950 rounded-xl border border-slate-900 text-xs">
+                        <span className="font-bold truncate max-w-sm">{p.title}</span>
+                        <button onClick={()=>handleDeletePaper(p.id)} className="p-2 text-rose-500 hover:bg-rose-500/10 rounded-lg transition"><Trash2 className="w-4 h-4" /></button>
+                      </div>
+                    ))}
                   </div>
-
-                  {/* GDPR PURGE REGULATOR */}
-                  <form onSubmit={handlePurgeUserData} className="bg-slate-950 p-4 rounded-xl border border-slate-900 space-y-3">
-                    <div>
-                      <span className="block text-xs font-mono text-rose-400 font-black uppercase tracking-wider">⚠️ Right to Be Forgotten Pipeline (GDPR)</span>
-                      <p className="text-[11px] text-slate-500 font-sans leading-normal mt-0.5">
-                        የማንኛውም ተጠቃሚ የውሂብ መዝገብ (Comments/Profile) ሙሉ በሙሉ ከሲስተሙ ለማጥፋት ኢሜይሉን እዚህ ያስገቡ።
-                      </p>
-                    </div>
-                    <div className="flex flex-col sm:flex-row gap-2">
-                      <input
-                        type="email"
-                        placeholder="target-trader@domain.com"
-                        value={purgeTargetEmail}
-                        onChange={(e) => setPurgeTargetEmail(e.target.value)}
-                        required
-                        className="flex-1 bg-slate-900 border border-slate-800 rounded-xl px-3 py-1.5 text-xs font-mono text-slate-200"
-                      />
-                      <button type="submit" className="px-4 py-1.5 bg-rose-600 hover:bg-rose-500 text-white font-mono text-xs font-bold rounded-xl transition cursor-pointer">
-                        Execute Wipeout
-                      </button>
-                    </div>
-                    {purgeResult && <p className="text-[11px] font-mono text-amber-400 font-bold bg-amber-500/5 p-2 rounded-lg border border-amber-500/10">{purgeResult}</p>}
-                  </form>
                 </div>
               )}
-            </div>
-
-            {/* LIVE LIBRARY MANAGEMENT */}
-            <div className="bg-slate-900/40 border border-slate-800 rounded-2xl p-5 backdrop-blur-sm shadow-xl">
-              <h3 className="text-xs font-mono uppercase font-black text-slate-400 mb-3 border-b border-slate-950 pb-2">
-                📁 Active Database Paper Registries ({papers.length})
-              </h3>
-              <div className="space-y-2">
-                {papers.map((p) => (
-                  <div key={p.id} className="flex items-center justify-between p-3 bg-slate-950 border border-slate-900/60 rounded-xl text-xs transition hover:border-slate-900">
-                    <div className="truncate max-w-md space-y-0.5">
-                      <span className="font-bold text-slate-300 block truncate font-sans">{p.title}</span>
-                      <span className="text-[10px] font-mono text-slate-500">By: {p.authors}</span>
-                    </div>
-                    <button
-                      onClick={() => {
-                        if(confirm('Are you sure you want to delete this paper?')) handleDeletePaper(p.id);
-                      }}
-                      className="p-2 bg-rose-500/10 hover:bg-rose-600 text-rose-400 hover:text-slate-950 rounded-xl transition"
-                    >
-                      <Trash2 className="w-3.5 h-3.5" />
-                    </button>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            {/* QUEUED INBOUND STUDENT FRAMEWORKS */}
-            <div className="bg-slate-900/40 border border-slate-800 rounded-2xl p-5 backdrop-blur-sm shadow-xl">
-              <h3 className="text-xs font-mono uppercase font-black text-slate-400 mb-3 border-b border-slate-950 pb-2">
-                📥 Student System Proposals Queue ({proposals.length})
-              </h3>
-              <div className="space-y-3">
-                {proposals.length === 0 ? (
-                  <p className="text-xs text-slate-600 font-mono italic text-center py-4">No student framework submissions inside pipeline queue.</p>
-                ) : (
-                  proposals.map((p) => (
-                    <div key={p.id} className="p-4 bg-slate-950 border border-slate-900 rounded-xl space-y-2">
-                      <div className="flex justify-between items-center font-mono text-[10px] text-slate-500 border-b border-slate-900 pb-1.5">
-                        <span>Sender: <strong className="text-slate-300">{p.name}</strong> ({p.contact})</span>
-                        <span>{p.timestamp || 'Just Now'}</span>
-                      </div>
-                      <h4 className="font-bold text-slate-200 font-sans text-xs">{p.title}</h4>
-                      <p className="text-slate-400 text-[11px] font-sans leading-relaxed text-justify">{p.abstract}</p>
-                      <div className="flex items-center gap-1 text-[10px] text-emerald-400 font-mono font-bold pt-1">
-                        <span>Convert to Core Paper Registry via backend</span>
-                        <ArrowRight className="w-3 h-3" />
-                      </div>
-                    </div>
-                  ))
-                )}
-              </div>
             </div>
           </div>
         )}
       </main>
 
-      {/* AUTHENTICATION SYSTEM DIALOG MODAL */}
+      {/* FOOTER */}
+      <footer className="border-t border-slate-900 bg-slate-950 p-8 text-center text-[10px] font-mono text-slate-600">
+        © 2026 የትሬዲንግ ስነ-ልቦና ምርምር መድረክ (Trading Psychology Sandbox). <br />
+        <span className="text-emerald-500/50 mt-1 block">Rhythmic Data Node Live 2026</span>
+      </footer>
+
+      {/* AUTH MODAL */}
       <AnimatePresence>
         {isAuthModalOpen && (
-          <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-            <motion.div
-              initial={{ opacity: 0, scale: 0.95 }}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0, scale: 0.95 }}
-              className="w-full max-w-sm bg-slate-900 border border-slate-800 rounded-2xl p-6 relative shadow-2xl"
-            >
-              <button
-                onClick={() => setIsAuthModalOpen(false)}
-                className="absolute top-4 right-4 text-slate-500 hover:text-slate-300 transition"
-              >
-                ✕
-              </button>
-              <h3 className="text-md font-black tracking-tight mb-1 font-sans">
-                {authMode === 'login' ? 'Terminal Login' : 'Initialize Profile'}
-              </h3>
-              <p className="text-[11px] font-mono text-slate-500 uppercase tracking-wider mb-4">
-                Identity Authentication
-              </p>
-
-              <form onSubmit={handleAuthSubmit} className="space-y-3 font-mono text-xs">
-                {authMode === 'signup' && (
-                  <input
-                    type="text"
-                    placeholder="Full Identification Name"
-                    value={authName}
-                    onChange={(e) => setAuthName(e.target.value)}
-                    required
-                    className="w-full bg-slate-950 border border-slate-800 rounded-xl py-2 px-3 text-slate-200 focus:outline-none focus:border-emerald-500/40"
-                  />
-                )}
-                <input
-                  type="email"
-                  placeholder="Network Email Identity"
-                  value={authEmail}
-                  onChange={(e) => setAuthEmail(e.target.value)}
-                  required
-                  className="w-full bg-slate-950 border border-slate-800 rounded-xl py-2 px-3 text-slate-200 focus:outline-none focus:border-emerald-500/40"
-                />
-                <input
-                  type="password"
-                  placeholder="Terminal Key Password"
-                  value={authPassword}
-                  onChange={(e) => setAuthPassword(e.target.value)}
-                  required
-                  className="w-full bg-slate-950 border border-slate-800 rounded-xl py-2 px-3 text-slate-200 focus:outline-none focus:border-emerald-500/40"
-                />
-                {authMode === 'signup' && (
-                  <input
-                    type="text"
-                    placeholder="Telegram Username (Optional)"
-                    value={authTelegram}
-                    onChange={(e) => setAuthTelegram(e.target.value)}
-                    className="w-full bg-slate-950 border border-slate-800 rounded-xl py-2 px-3 text-slate-200 focus:outline-none focus:border-emerald-500/40"
-                  />
-                )}
-
-                {authError && <p className="text-[11px] text-rose-400 font-bold font-sans text-center">{authError}</p>}
-
-                <button
-                  type="submit"
-                  className="w-full py-2.5 bg-emerald-500 hover:bg-emerald-600 text-slate-950 font-black uppercase tracking-wider rounded-xl transition"
-                >
-                  {authMode === 'login' ? 'Unlock Terminal' : 'Register Signature'}
-                </button>
+          <div className="fixed inset-0 bg-slate-950/90 backdrop-blur-md z-[100] flex items-center justify-center p-6">
+            <div className="w-full max-w-sm bg-slate-900 border border-slate-800 rounded-3xl p-8 relative shadow-2xl">
+              <button onClick={()=>setIsAuthModalOpen(false)} className="absolute top-6 right-6 text-slate-500"><X className="w-5 h-5" /></button>
+              <h3 className="text-xl font-black mb-6">{authMode === 'login' ? 'Terminal Login' : 'Register Signature'}</h3>
+              <form onSubmit={handleAuthSubmit} className="space-y-4">
+                {authMode === 'signup' && <input type="text" placeholder="Identification Name" value={authName} onChange={e=>setAuthName(e.target.value)} required className="w-full bg-slate-950 border border-slate-800 rounded-xl p-3 text-xs" />}
+                <input type="email" placeholder="Network Email Node" value={authEmail} onChange={e=>setAuthEmail(e.target.value)} required className="w-full bg-slate-950 border border-slate-800 rounded-xl p-3 text-xs" />
+                <input type="password" placeholder="Terminal Key" value={authPassword} onChange={e=>setAuthPassword(e.target.value)} required className="w-full bg-slate-950 border border-slate-800 rounded-xl p-3 text-xs" />
+                {authError && <p className="text-xs text-rose-400 font-bold">{authError}</p>}
+                <button type="submit" className="w-full py-3 bg-emerald-500 text-slate-950 font-black rounded-xl text-xs uppercase tracking-widest transition">Execute</button>
               </form>
-
-              <div className="mt-4 pt-3 border-t border-slate-800/60 text-center text-[11px] font-sans">
-                {authMode === 'login' ? (
-                  <p className="text-slate-400">
-                    New proxy operator?{' '}
-                    <button onClick={() => setAuthMode('signup')} className="text-emerald-400 font-bold hover:underline">
-                      Initialize Profile
-                    </button>
-                  </p>
-                ) : (
-                  <p className="text-slate-400">
-                    Existing active identity?{' '}
-                    <button onClick={() => setAuthMode('login')} className="text-emerald-400 font-bold hover:underline">
-                      Terminal Login
-                    </button>
-                  </p>
-                )}
-              </div>
-            </motion.div>
+              <button onClick={()=>setAuthMode(authMode==='login'?'signup':'login')} className="mt-6 text-xs text-slate-500 hover:text-emerald-400 transition w-full text-center">
+                {authMode === 'login' ? "Don't have a profile? Signup" : "Already have an identity? Login"}
+              </button>
+            </div>
           </div>
         )}
       </AnimatePresence>
-
-      {/* ACTIVE PROFILE DIALOG MODAL */}
-      <AnimatePresence>
-        {isProfileModalOpen && activeUser && (
-          <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-            <motion.div
-              initial={{ opacity: 0, scale: 0.95 }}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0, scale: 0.95 }}
-              className="w-full max-w-sm bg-slate-900 border border-slate-800 rounded-2xl p-6 relative shadow-2xl"
-            >
-              <button
-                onClick={() => setIsProfileModalOpen(false)}
-                className="absolute top-4 right-4 text-slate-500 hover:text-slate-300 transition"
-              >
-                ✕
-              </button>
-              <h3 className="text-sm font-black text-slate-200 mb-4 border-b border-slate-950 pb-2 flex items-center gap-2">
-                <User className="w-4 h-4 text-emerald-400" /> Operational Terminal Credentials
-              </h3>
-              <div className="space-y-3 font-mono text-xs text-slate-300 mb-6">
-                <div>
-                  <span className="text-[10px] text-slate-500 uppercase block">Operator Signature</span>
-                  <strong className="text-slate-100 text-sm font-sans">{activeUser.name}</strong>
-                </div>
-                <div>
-                  <span className="text-[10px] text-slate-500 uppercase block">Routed Email Node</span>
-                  <span className="text-slate-200">{activeUser.email}</span>
-                </div>
-                {activeUser.telegram && (
-                  <div>
-                    <span className="text-[10px] text-slate-500 uppercase block">Telegram Core Link</span>
-                    <span className="text-emerald-400">{activeUser.telegram}</span>
-                  </div>
-                )}
-              </div>
-              <button
-                type="button"
-                onClick={() => {
-                  handleLogout();
-                  setIsProfileModalOpen(false);
-                }}
-                className="w-full py-2 border border-rose-500/20 bg-rose-500/10 hover:bg-rose-500 hover:text-slate-950 text-rose-400 text-xs font-bold uppercase rounded-xl transition cursor-pointer"
-              >
-                {lang === 'am' ? 'ከአካውንት ውጣ' : 'Disconnect Terminal'}
-              </button>
-            </motion.div>
-          </div>
-        )}
-      </AnimatePresence>
-
-      <footer className="border-t border-slate-900 bg-slate-950 p-6 mt-12 z-10">
-        <div className="max-w-7xl mx-auto flex flex-col md:flex-row items-center justify-between gap-4 text-xs font-mono text-slate-500">
-          <div>
-            <span>© 2026 የትሬዲንግ ስነ-ልቦና ምርምር መድረክ (Trading Psychology Sandbox).</span>
-          </div>
-          <div className="flex items-center gap-4">
-            <a href="https://t.me/tradingpsychologyresearchbot" target="_blank" rel="noreferrer" className="hover:text-emerald-400 transition">ቴሌግራም አድሚን</a>
-            <span>|</span>
-            <span className="flex items-center gap-1.5">
-              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-              <span>Node Live 2026</span>
-            </span>
-          </div>
-        </div>
-      </footer>
     </div>
   );
 }
