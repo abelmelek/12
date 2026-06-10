@@ -7,7 +7,7 @@ import {
 import { AnimatePresence, motion } from 'motion/react';
 import { translations } from './translations';
 
-// ንዑስ ኮምፖነንቶችን ማስገባት
+// ንዑስ ኮምፖነንቶች
 import ResearchDashboard from './components/ResearchDashboard';
 import DelayedGratificationSimulator from './components/DelayedGratificationSimulator';
 import AdminPanel from './components/AdminPanel';
@@ -23,12 +23,12 @@ export default function App() {
   const [activeTab, setActiveTab] = useState<string>('home');
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState<boolean>(false);
 
-  // --- CORE DATABASE STATES ---
+  // --- DATABASE STATES ---
   const [papers, setPapers] = useState<any[]>([]);
   const [comments, setComments] = useState<any[]>([]);
   const [proposals, setProposals] = useState<any[]>([]);
   
-  // --- AUTHENTICATION STATES ---
+  // --- AUTH STATES ---
   const [activeUser, setActiveUser] = useState<any>(null);
   const [isAuthModalOpen, setIsAuthModalOpen] = useState<boolean>(false);
   const [authMode, setAuthMode] = useState<'login' | 'signup'>('login');
@@ -39,7 +39,7 @@ export default function App() {
   const [authError, setAuthError] = useState<string | null>(null);
   const [isProfileModalOpen, setIsProfileModalOpen] = useState<boolean>(false);
 
-  // --- AUDIO SANDBOX STATES ---
+  // --- AUDIO STATES ---
   const [isRecording, setIsRecording] = useState<boolean>(false);
   const [recordingDuration, setRecordingDuration] = useState<number>(0);
   const [audioURL, setAudioURL] = useState<string | null>(null);
@@ -58,7 +58,7 @@ export default function App() {
   ]);
   const [newChecklistItem, setNewChecklistItem] = useState<string>('');
 
-  // --- MONTE CARLO SIMULATOR STATES ---
+  // --- SIMULATOR STATES ---
   const [startCapital, setStartCapital] = useState<number>(100);
   const [winRate, setWinRate] = useState<number>(50);
   const [riskReward, setRiskReward] = useState<number>(2.0);
@@ -67,7 +67,7 @@ export default function App() {
   const [isSimulating, setIsSimulating] = useState<boolean>(false);
   const [simSummary, setSimSummary] = useState<any>(null);
 
-  // --- PROPOSAL FORM STATES (አሁን ለየብቻ ታብ ሆኗል) ---
+  // --- PROPOSAL FORM STATES ---
   const [propName, setPropName] = useState<string>('');
   const [propContact, setPropContact] = useState<string>('');
   const [propTitle, setPropTitle] = useState<string>('');
@@ -85,11 +85,10 @@ export default function App() {
   const [expandedPaper, setExpandedPaper] = useState<string | null>(null);
   const [newCommentText, setNewCommentText] = useState<string>('');
 
-  // DATABASE CONFIG PIPELINE
   useEffect(() => {
-    fetch('/api/papers').then(res => res.json()).then(data => setPapers(data || []));
-    fetch('/api/comments').then(res => res.json()).then(data => setComments(data || []));
-    fetch('/api/proposals').then(res => res.json()).then(data => setProposals(data || []));
+    fetch('/api/papers').then(res => res.json()).then(data => setPapers(data || [])).catch(() => {});
+    fetch('/api/comments').then(res => res.json()).then(data => setComments(data || [])).catch(() => {});
+    fetch('/api/proposals').then(res => res.json()).then(data => setProposals(data || [])).catch(() => {});
     
     const storedUser = localStorage.getItem('trader_session');
     if (storedUser) setActiveUser(JSON.parse(storedUser));
@@ -107,7 +106,6 @@ export default function App() {
     return () => clearInterval(timerIntervalRef.current);
   }, [isRecording]);
 
-  // MONTE CARLO TRAJECTORY
   const runSimulatorTrajectory = () => {
     setIsSimulating(true);
     setTimeout(() => {
@@ -142,7 +140,6 @@ export default function App() {
     }, 400);
   };
 
-  // AUDIO RECORDING FUNCTIONS
   const startRecording = async () => {
     audioChunksRef.current = [];
     try {
@@ -157,7 +154,7 @@ export default function App() {
       };
       recorder.start();
       setIsRecording(true);
-    } catch (err) { console.error("Mic access denied", err); }
+    } catch (err) { console.error(err); }
   };
 
   const stopRecording = () => {
@@ -165,6 +162,14 @@ export default function App() {
       mediaRecorderRef.current.stop();
       setIsRecording(false);
       mediaRecorderRef.current.stream.getTracks().forEach(track => track.stop());
+    }
+  };
+
+  const handleAudioFileChange = (e: ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files[0]) {
+      const file = e.target.files[0];
+      setUploadedAudioFile(file);
+      setAudioURL(URL.createObjectURL(file));
     }
   };
 
@@ -183,7 +188,6 @@ export default function App() {
     setIsAnalyzing(false);
   };
 
-  // ACTIONS
   const handleLike = async (id: string, e: any) => {
     e.stopPropagation();
     const res = await fetch(`/api/papers/${id}/like`, { method: 'POST' });
@@ -230,10 +234,42 @@ export default function App() {
     }
   };
 
+  const handleUnlockPrivacyGate = (e: FormEvent) => {
+    e.preventDefault();
+    if (privacyPin === 'privacy99') {
+      setPrivacyGateUnlocked(true);
+      setPrivacyError(null);
+    } else {
+      setPrivacyError('Invalid security PIN code.');
+    }
+  };
+
+  const handlePurgeUserData = async (e: FormEvent) => {
+    e.preventDefault();
+    const res = await fetch(`/api/admin/privacy/purge?email=${encodeURIComponent(purgeTargetEmail)}`, { method: 'POST' });
+    if (res.ok) {
+      const out = await res.json();
+      setPurgeResult(out.message);
+      setComments(prev => prev.filter(c => c.email !== purgeTargetEmail));
+    }
+  };
+
+  const handleDeletePaper = async (id: string) => {
+    const res = await fetch(`/api/papers/${id}`, { method: 'DELETE' });
+    if (res.ok) {
+      setPapers(prev => prev.filter(p => p.id !== id));
+    }
+  };
+
+  const maskEmail = (email: string) => {
+    if (!maskEmailsInPublic) return email;
+    if (!email || !email.includes('@')) return '******';
+    const [part1, part2] = email.split('@');
+    return part1.substring(0, 2) + '***@' + part2;
+  };
+
   return (
     <div className="min-h-screen bg-[#020813] text-slate-100 flex flex-col antialiased">
-      
-      {/* HEADER NAVIGATION */}
       <header className="border-b border-slate-900 bg-slate-950/80 backdrop-blur-md sticky top-0 z-50 px-6 py-4">
         <div className="max-w-7xl mx-auto flex items-center justify-between">
           <div className="flex items-center gap-2">
@@ -267,20 +303,14 @@ export default function App() {
         </div>
       </header>
 
-      {/* CORE DISPLAY HUB */}
       <main className="flex-1 py-8 max-w-7xl mx-auto w-full px-4">
-        
         {activeTab === 'home' && (
           <div className="space-y-10">
-            {/* HERO SECTION ፡ AUDIO SANDBOX & RULES */}
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-              
-              {/* VOICE INTERFACE */}
               <div className="lg:col-span-2 bg-slate-900/40 border border-slate-800/80 rounded-2xl p-5 backdrop-blur-md flex flex-col justify-between">
                 <div>
                   <h2 className="text-sm font-bold flex items-center gap-1.5 mb-1"><AudioLines className="text-emerald-400 w-4 h-4" /> {translations[lang].voiceSandboxTitle}</h2>
                   <p className="text-xs text-slate-400 mb-4">{translations[lang].voiceSandboxDesc}</p>
-                  
                   <div className="flex flex-wrap items-center gap-3">
                     {!isRecording ? (
                       <button onClick={startRecording} className="px-3 py-1.5 bg-emerald-500 hover:bg-emerald-600 text-slate-950 font-bold font-mono text-xs rounded-xl transition">Record</button>
@@ -300,7 +330,7 @@ export default function App() {
                       {isAnalyzing ? 'Analyzing Audio Rhythm...' : 'Run Neuro-Acoustic Analysis'}
                     </button>
                     {aiAnalysisResult && (
-                      <div className="mt-3 bg-slate-950 p-3 rounded-xl border border-slate-900 text-xs text-slate-300 space-y-1 font-sans">
+                      <div className="mt-3 bg-slate-950 p-3 rounded-xl border border-slate-900 text-xs text-slate-300 space-y-1">
                         <p><strong>Emotion:</strong> {aiAnalysisResult.detectedEmotion} ({aiAnalysisResult.riskLevel} Risk)</p>
                         <p className="italic text-slate-400">"{aiAnalysisResult.feedback}"</p>
                       </div>
@@ -309,7 +339,6 @@ export default function App() {
                 )}
               </div>
 
-              {/* RULES DISCIPLINE CHECKLIST */}
               <div className="bg-slate-900/40 border border-slate-800/80 rounded-2xl p-5 backdrop-blur-md flex flex-col justify-between">
                 <div>
                   <h2 className="text-sm font-bold flex items-center gap-1.5 mb-1"><CheckSquare className="text-emerald-400 w-4 h-4" /> Trading Rules Sandbox</h2>
@@ -329,7 +358,6 @@ export default function App() {
               </div>
             </div>
 
-            {/* RESEARCH GRID CARDS (ጥናቶቹ በቦክስ ዲዛይን) */}
             <div>
               <h2 className="text-md font-bold mb-4 flex items-center gap-1.5">📊 {lang === 'am' ? 'የቅርብ ጊዜ ሳይንሳዊ ምርምሮች' : 'Latest Research Library'}</h2>
               <ResearchDashboard
@@ -343,7 +371,6 @@ export default function App() {
           </div>
         )}
 
-        {/* DELAYED GRATIFICATION SIMULATOR TAB */}
         {activeTab === 'simulator' && (
           <DelayedGratificationSimulator
             startCapital={startCapital} setStartCapital={setStartCapital} winRate={winRate} setWinRate={setWinRate}
@@ -353,39 +380,36 @@ export default function App() {
           />
         )}
 
-        {/* SUBMIT PROPOSAL PORTAL (ለብቻው ፔጅ የተደረገው) */}
         {activeTab === 'submit_proposal' && (
           <div className="max-w-2xl mx-auto bg-slate-900/40 border border-slate-800 rounded-2xl p-6 backdrop-blur-md">
             <h2 className="text-lg font-bold mb-2 border-b border-slate-800 pb-2">🧑‍🎓 {translations[lang].submitProposal}</h2>
-            <p className="text-xs text-slate-400 mb-6">የእርስዎን የትሬዲንግ ስነ-ልቦና ወይንም የሂሳብ ማባዣ ስልት ጥናት እዚህ ያቅርቡ። አድሚን ገምግሞ ለህዝብ ግልጽ ያደርገዋል።</p>
             <form onSubmit={handleSubmitProposal} className="space-y-4">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-xs font-mono text-slate-400 mb-1">የአመልካች ሙሉ ስም *</label>
-                  <input type="text" value={propName} onChange={(e) => setPropName(e.target.value)} required className="w-full bg-slate-950 border border-slate-800 rounded-xl py-2 px-3 text-xs text-slate-200 focus:outline-none focus:border-emerald-500" />
+                  <input type="text" value={propName} onChange={(e) => setPropName(e.target.value)} required className="w-full bg-slate-950 border border-slate-800 rounded-xl py-2 px-3 text-xs text-slate-200" />
                 </div>
                 <div>
-                  <label className="block text-xs font-mono text-slate-400 mb-1">የመገናኛ አድራሻ (ኢሜይል/ስልክ) *</label>
-                  <input type="text" value={propContact} onChange={(e) => setPropContact(e.target.value)} required className="w-full bg-slate-950 border border-slate-800 rounded-xl py-2 px-3 text-xs text-slate-200 focus:outline-none focus:border-emerald-500" />
+                  <label className="block text-xs font-mono text-slate-400 mb-1">የመገናኛ አድራሻ *</label>
+                  <input type="text" value={propContact} onChange={(e) => setPropContact(e.target.value)} required className="w-full bg-slate-950 border border-slate-800 rounded-xl py-2 px-3 text-xs text-slate-200" />
                 </div>
               </div>
               <div>
                 <label className="block text-xs font-mono text-slate-400 mb-1">የጥናቱ ርዕስ *</label>
-                <input type="text" value={propTitle} onChange={(e) => setPropTitle(e.target.value)} required className="w-full bg-slate-950 border border-slate-800 rounded-xl py-2 px-3 text-xs text-slate-200 focus:outline-none focus:border-emerald-500" />
+                <input type="text" value={propTitle} onChange={(e) => setPropTitle(e.target.value)} required className="w-full bg-slate-950 border border-slate-800 rounded-xl py-2 px-3 text-xs text-slate-200" />
               </div>
               <div>
-                <label className="block text-xs font-mono text-slate-400 mb-1">የጥናቱ አጭር ማጠቃለያ (Abstract Concept Outline) *</label>
-                <textarea value={propAbstract} onChange={(e) => setPropAbstract(e.target.value)} rows={6} required className="w-full bg-slate-950 border border-slate-800 rounded-xl py-2 px-3 text-xs text-slate-200 focus:outline-none focus:border-emerald-500 resize-none" />
+                <label className="block text-xs font-mono text-slate-400 mb-1">የጥናቱ አጭር ማጠቃለያ *</label>
+                <textarea value={propAbstract} onChange={(e) => setPropAbstract(e.target.value)} rows={6} required className="w-full bg-slate-950 border border-slate-800 rounded-xl py-2 px-3 text-xs text-slate-200 resize-none" />
               </div>
               <button type="submit" className="w-full py-2.5 bg-emerald-500 hover:bg-emerald-600 text-slate-950 font-mono font-bold text-xs uppercase tracking-wider rounded-xl transition">
-                {translations[lang].paperPublishBtn || 'Submit Proposal'}
+                Submit Proposal
               </button>
             </form>
             {proposalSuccess && <p className="mt-4 text-xs font-mono text-emerald-400 bg-emerald-500/5 p-3 rounded-xl border border-emerald-500/10 text-center">{proposalSuccess}</p>}
           </div>
         )}
 
-        {/* ADMIN PANEL HUB */}
         {activeTab === 'admin' && (
           <AdminPanel
             papers={papers} proposals={proposals} privacyGateUnlocked={privacyGateUnlocked} setPrivacyGateUnlocked={setPrivacyGateUnlocked}
@@ -396,25 +420,6 @@ export default function App() {
           />
         )}
       </main>
-
-      {/* AUTHENTICATION DIALOG */}
-      <AnimatePresence>
-        {isAuthModalOpen && (
-          <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-            <div className="w-full max-w-sm bg-slate-900 border border-slate-800 rounded-2xl p-6 relative">
-              <button onClick={() => setIsAuthModalOpen(false)} className="absolute top-4 right-4 text-slate-500 hover:text-slate-300">✕</button>
-              <h3 className="text-md font-bold mb-4">{authMode === 'login' ? 'Login to Sandbox' : 'Create Trader Profile'}</h3>
-              <form onSubmit={handleAuthSubmit} className="space-y-3">
-                {authMode === 'signup' && <input type="text" placeholder="Full Name" value={authName} onChange={(e) => setAuthName(e.target.value)} required className="w-full bg-slate-950 border border-slate-800 rounded-xl py-2 px-3 text-xs text-slate-200" />}
-                <input type="email" placeholder="Email" value={authEmail} onChange={(e) => setAuthEmail(e.target.value)} required className="w-full bg-slate-950 border border-slate-800 rounded-xl py-2 px-3 text-xs text-slate-200" />
-                <input type="password" placeholder="Password" value={authPassword} onChange={(e) => setAuthPassword(e.target.value)} required className="w-full bg-slate-950 border border-slate-800 rounded-xl py-2 px-3 text-xs text-slate-200" />
-                {authError && <p className="text-xs text-rose-400">{authError}</p>}
-                <button type="submit" className="w-full py-2 bg-emerald-500 text-slate-950 font-bold text-xs rounded-xl">Continue</button>
-              </form>
-            </div>
-          </div>
-        )}
-      </AnimatePresence>
 
       <footer className="border-t border-slate-900 bg-slate-950 p-6 text-center text-xs font-mono text-slate-500 mt-12">
         © 2026 የትሬዲንግ ስነ-ልቦና ምርምር መድረክ (Trading Psychology Sandbox).
