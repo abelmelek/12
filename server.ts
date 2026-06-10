@@ -926,9 +926,19 @@ app.get('/api/admin/privacy/export', (req, res) => {
 
 // Production bundling static handler
 if (process.env.NODE_ENV === 'production') {
-  app.use(express.static(__dirname));
+  // 💡 ማብራሪያ፡ በ ቢልድ ሰዓት ሰርቨሩ ራሱ dist ውስጥ ስለሚሆን __dirname እራሱ dist ን ይወክላል።
+  // ስለዚህ path.join(__dirname, 'dist') ከማለት ይልቅ __dirname ን በቀጥታ መጠቀም ወይም ወደ ኋላ መመለስ ያስፈልጋል።
+  
+  const distPath = path.resolve(__dirname, 'index.html').includes('dist') 
+    ? __dirname 
+    : path.join(__dirname, 'dist');
+
+  console.log(`[Production Static Mode] Serving frontend from: ${distPath}`);
+
+  app.use(express.static(distPath));
+  
   app.get('*', (req, res) => {
-    res.sendFile(path.join(__dirname, 'index.html'));
+    res.sendFile(path.join(distPath, 'index.html'));
   });
 } else {
   // @ts-ignore
@@ -950,8 +960,3 @@ if (process.env.NODE_ENV === 'production') {
     }
   });
 }
-
-const port = process.env.PORT || 3000;
-app.listen(port, () => {
-  console.log(`Server running at http://localhost:${port}`);
-});
