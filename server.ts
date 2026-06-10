@@ -392,7 +392,9 @@ app.post('/api/telegram/webhook', async (req, res) => {
     const userId = message.from?.id;
     const fromName = [message.from?.first_name || '', message.from?.last_name || ''].join(' ').trim() || 'Anonymous User';
     const username = message.from?.username ? `@${message.from.username}` : 'የሌለው (None)';
-    const text = message.text || message.caption || '';
+    
+    // Safety fix for non-text updates (Photos, Documents, etc.)
+    const text = (message.text || message.caption || '').trim();
 
     if (text.startsWith('/start') || text.startsWith('/help')) {
       const welcomeMsg = `እንኳን በደህና መጡ! 🌟 በትሬዲንግ ስነ-ልቦና እና ጥናት (Trading Psychology Research Bot) ማዕከል ወደሚገኘው የውይይት ረዳት ቦት በደህና መጡ።\n\n` +
@@ -926,10 +928,6 @@ app.get('/api/admin/privacy/export', (req, res) => {
 
 // Production bundling static handler
 if (process.env.NODE_ENV === 'production') {
-  // Render ላይ ሰርቨሩ ራሱ dist ውስጥ ስለሚሆን __dirname እራሱ dist ን ይወክላል።
-  // index.html ፋይሉ እና ሰርቨሩ በአንድ ፎልደር (dist) ውስጥ አብረው ካሉ __dirname ን በቀጥታ እንጠቀማለን።
-  // ካልሆነ ግን ወደ ኋላ ተመልሶ dist ፎልደርን ይፈልጋል።
-  
   const distPath = fs.existsSync(path.join(__dirname, 'index.html'))
     ? __dirname
     : path.join(__dirname, 'dist');
@@ -961,3 +959,9 @@ if (process.env.NODE_ENV === 'production') {
     }
   });
 }
+
+// Start local server listener
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => {
+  console.log(`Server running at http://localhost:${PORT}`);
+});
