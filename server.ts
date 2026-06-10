@@ -926,14 +926,15 @@ app.get('/api/admin/privacy/export', (req, res) => {
 
 // Production bundling static handler
 if (process.env.NODE_ENV === 'production') {
-  // 💡 ማብራሪያ፡ በ ቢልድ ሰዓት ሰርቨሩ ራሱ dist ውስጥ ስለሚሆን __dirname እራሱ dist ን ይወክላል።
-  // ስለዚህ path.join(__dirname, 'dist') ከማለት ይልቅ __dirname ን በቀጥታ መጠቀም ወይም ወደ ኋላ መመለስ ያስፈልጋል።
+  // Render ላይ ሰርቨሩ ራሱ dist ውስጥ ስለሚሆን __dirname እራሱ dist ን ይወክላል።
+  // index.html ፋይሉ እና ሰርቨሩ በአንድ ፎልደር (dist) ውስጥ አብረው ካሉ __dirname ን በቀጥታ እንጠቀማለን።
+  // ካልሆነ ግን ወደ ኋላ ተመልሶ dist ፎልደርን ይፈልጋል።
   
-  const distPath = path.resolve(__dirname, 'index.html').includes('dist') 
-    ? __dirname 
+  const distPath = fs.existsSync(path.join(__dirname, 'index.html'))
+    ? __dirname
     : path.join(__dirname, 'dist');
 
-  console.log(`[Production Static Mode] Serving frontend from: ${distPath}`);
+  console.log(`[Production Mode] Serving static frontend from: ${distPath}`);
 
   app.use(express.static(distPath));
   
