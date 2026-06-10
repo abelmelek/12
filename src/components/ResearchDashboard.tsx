@@ -1,6 +1,6 @@
-import React from 'react';
+import React, { ChangeEvent } from 'react';
 import { motion } from 'motion/react';
-import { ThumbsUp, MessageSquare, BookOpen } from 'lucide-react';
+import { ThumbsUp, MessageSquare } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 
 interface DashboardProps {
@@ -18,11 +18,13 @@ interface DashboardProps {
   maskEmail: (email: string) => string;
   lang: 'am' | 'en';
   translations: any;
+  handleAudioFileChange: (e: ChangeEvent<HTMLInputElement>) => void; // ተጨምሯል
 }
 
 export default function ResearchDashboard({
   papers, searchQuery, setSearchQuery, expandedPaper, setExpandedPaper, handleLike,
-  activeUser, comments, newCommentText, setNewCommentText, handleAddComment, maskEmail, lang
+  activeUser, comments, newCommentText, setNewCommentText, handleAddComment, maskEmail, lang,
+  handleAudioFileChange
 }: DashboardProps) {
   
   const filteredPapers = papers.filter(p =>
@@ -32,7 +34,7 @@ export default function ResearchDashboard({
 
   return (
     <div className="space-y-6">
-      {/* SEARCH BOX INPUT */}
+      {/* SEARCH BOX */}
       <div className="max-w-md">
         <input
           type="text"
@@ -43,7 +45,7 @@ export default function ResearchDashboard({
         />
       </div>
 
-      {/* GRID BOXES LAYOUT (2-Column Cards) */}
+      {/* GRID BOXES LAYOUT */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         {filteredPapers.map((paper) => {
           const isExpanded = expandedPaper === paper.id;
@@ -70,16 +72,15 @@ export default function ResearchDashboard({
                   {paper.abstract}
                 </p>
 
-                {/* EXPANDED MARKDOWN CONTENT */}
                 {isExpanded && (
                   <div className="mt-4 pt-4 border-t border-slate-800 space-y-4">
                     <div className="prose prose-invert prose-xs text-slate-300 max-w-none bg-slate-950/40 p-3 rounded-xl font-sans">
                       <ReactMarkdown>{paper.content}</ReactMarkdown>
                     </div>
 
-                    {/* COMMENTS SUBSECTION */}
+                    {/* COMMENTS */}
                     <div className="space-y-2">
-                      <h4 className="text-[10px] font-mono text-slate-400 uppercase flex items-center gap-1"><MessageSquare className="w-3 h-3" /> User Discourse ({paperComments.length})</h4>
+                      <h4 className="text-[10px] font-mono text-slate-400 uppercase flex items-center gap-1">User Discourse ({paperComments.length})</h4>
                       <div className="max-h-32 overflow-y-auto space-y-2 pr-1">
                         {paperComments.map(c => (
                           <div key={c.id} className="bg-slate-950 p-2 rounded-lg text-[11px]">
